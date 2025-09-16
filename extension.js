@@ -7,21 +7,21 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 
-const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears(ms).
-const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms).
-const INIT_DELAY_MS    = 6000; // Initial delay before positioning overlay(ms).
-const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking screen before repositioning overlay(ms).
-const INACTIVE_OPACITY = 0;    // Overlay opacity when inactive (0-255). 0 = fully transparent
-const INIT_RETRIES     = 3;    //   Number of retries if initial positioning fails.
-const OVERLAY_COLOR    = '#000000'; //  Overlay background color. USe #000000 for AMOLED display.
+const INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
+const FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
+const INIT_DELAY_MS    = 6000;// The initial delay before positioning the overlay(ms).
+const UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
+const INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
+const INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
+const OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use #000000 for pure black (AMOLED display).
 
 // Clock
-const CLOCK_JITTERX      = 80;   // Max horizontal jitter(px).
-const CLOCK_MARGIN_RIGHT = 170;  // Distance from right edge(px). Increased for clock+date
+const CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the clock can randomly shift left or right from its base position(px).
+const CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the clock and the right edge of the overlay(px).
 
 // Date
 const DATE_MARGIN   = 6;      // Space between clock and date(px)
-const DATE_US_STYLE = false;  //  false → DD.MM.YY, true → MM.DD.YY
+const DATE_US_STYLE = false;  //  false -DD.MM.YY, true -MM.DD.YY
 
 
 export default class AMOLEDOverlayExtension extends Extension {
