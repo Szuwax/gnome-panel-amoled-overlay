@@ -1,30 +1,34 @@
-AMOLED Overlay Extension
+# AMOLED Overlay Extension
 
-A GNOME Shell extension that places a black overlay on the top panel/dash to panel to reduce the risk of OLED burn-in.
+Hiding the panel on an AMOLED screen felt annoying. For me it was more convenient to keep the panel always visible with a small height and simply make it turn fully black when not in use.  
+That’s why this extension was created.
+
+Black overlay on the top panel/dash to panel to reduce the risk of OLED burn-in.
 It displays a small digital clock that periodically shifts its horizontal position to prevent static burn-in.
 
+![Overlay with clock](ss/1.png)
+![wITHOUT OVERLAY](ss/2.png)
+## Features
+
+- Black overlay on the top panel/Dash to Panel to reduce OLED burn-in  
+- Digital clock that periodically shifts horizontally to prevent static burn-in  
+- Overlay appears after a period of inactivity **when the mouse is not over the panel**  
+- Smooth fade-in animation when overlay is activated  
+- Clock automatically updates every minute  
+- Overlay hides when:
+  - Mouse moves over the panel  
+  - A system notification appears  
+- Repositions when:
+  - Screen is unlocked (with delay)  
+  - Monitors configuration changes 
+- Retries several times to attach correctly after startup, with safe fallback if it fails  
+- Optional bundled custom font (Matrixtype) for the clock, or system default  
+  - Download and install: [Matrixtype Display Regular](https://www.fontspace.com/matrixtype-font-f125326)
 
 
-
-Features:
-
-Black transparent overlay on the top panel/dash to panel to reduce OLED burn-in
-Digital clock that periodically shifts horizontally to prevent static burn-in
-Overlay appears after a period of mouse inactivity
-Smooth fade-in animation when overlay is activated
-Clock automatically updates every minute
-Overlay hides and resets when:
-  mouse moves over the panel
-  a system notification appears
-Repositions itself when:
-  screen is unlocked (with delay)
-  monitors configuration changes (e.g. external display)
-
-Retries several times to attach correctly after startup, with safe fallback if it fails
-Optional bundled custom font (Matrixtype) for the clock, or system default
-(Download and install: Matrixtype-font Display Regular Style https://www.fontspace.com/matrixtype-font-f125326)
 
 Configuration:
+
 You can edit constants directly in extension.js to customize behavior:
 ~~~
 const INACTIVITY_MS   = 2000; // Mouse inactivity before overlay appears (ms)
