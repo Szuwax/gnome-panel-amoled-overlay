@@ -46,8 +46,16 @@ const CLOCK_MARGIN_RIGHT = 60;        // Distance from right edge (px)
 const USE_CUSTOM_FONT    = true;      // Use bundled font (Matrixtype) or system default
 ~~~
 Installation:
+
+1.Clone this repository into your GNOME extensions folder:
 ~~~
-1.Clone this repository into your GNOME extensions folder
+git clone https://github.com/Szuwax/gnome-panel-amoled-overlay ~/.local/share/gnome-shell/extensions/amoled-overlay@Szu
+~~~
 2.Restart GNOME Shell
 3.Enable the extension via Extensions mng
-~~~
+
+
+
+##
+This extension is a personal project I made for my own use, so I don't plan to publish it on the GNOME Extensions site. It works well for my setup, so I probably won't be actively maintaining it or fixing bugs unless I decide to add new features later on.
+Still, Im open for suggestions and ideas for how to make it better
