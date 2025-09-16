@@ -13,7 +13,7 @@ const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overla
 const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
 const ACTIVE_OPACITY  = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
 const INIT_RETRIES    = 3;    // The number of times to retry positioning the overlay if it fails.
-
+const OVERLAY_COLOR = '#000000'; // The background color of the overlay. Use #000000 for pure black (AMOLED display).
 //Clock
 const CLOCK_COLOR        = '#006600';
 const CLOCK_SIZE         = 18;  // px
@@ -35,7 +35,7 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     enable() {
         this._overlay = new St.Widget({
-            style: 'background-color: black;',
+            style: `background-color: ${OVERLAY_COLOR};`,
             reactive: false,
             opacity: ACTIVE_OPACITY,
         });
