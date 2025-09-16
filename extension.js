@@ -18,7 +18,7 @@ const OVERLAY_COLOR = '#000000'; // The background color of the overlay. Use #00
 const CLOCK_COLOR        = '#006600';
 const CLOCK_SIZE         = 18;  // px
 const CLOCK_JITTERX      = 45;  //The maximum horizontal offset by which the clock can randomly shift left or right from its base position(px).
-const CLOCK_MARGIN_RIGHT = 60;  // The fixed distance between the clock and the right edge of the overlay(px).
+const CLOCK_MARGIN_RIGHT = 90;  // The fixed distance between the clock and the right edge of the overlay(px).
 const USE_CUSTOM_FONT = true;   // true -use bundled font (Matrixtype), false -system default font
 
 export default class AMOLEDOverlayExtension extends Extension {
