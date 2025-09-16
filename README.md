@@ -47,6 +47,9 @@ const CLOCK_MARGIN_RIGHT = 150;  // Distance from right edge(px). Increased for 
 const DATE_MARGIN   = 8;      // Space between clock and date(px)
 const DATE_US_STYLE = false;  // false -DD.MM.YY, true -MM.DD.YY
 ~~~
+You can edit font color and font size in stylesheet.css
+
+
 Installation:
 
 1.Create the extension folder:
