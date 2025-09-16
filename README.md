@@ -1,4 +1,4 @@
-# AMOLED Overlay Extension
+# AMOLED Overlay Extension (WIP)
 
 Hiding the panel on an AMOLED screen felt annoying. For me it was more convenient to keep the panel always visible with a small height and simply make it turn fully black when not in use.  
 That’s why this extension was created.
@@ -22,8 +22,8 @@ It displays a small digital clock that periodically shifts its horizontal positi
   - Screen is unlocked (with delay)  
   - Monitors configuration changes 
 - Retries several times to attach correctly after startup, with safe fallback if it fails  
-- Optional bundled custom font (Matrixtype) for the clock, or system default  
-  - Download and install: [Matrixtype Display Regular](https://www.fontspace.com/matrixtype-font-f125326)
+- Optional custom font (Matrixtype) for the clock, or system default  
+  - Download and install (Display Regular Style font): [Matrixtype Display Regular](https://www.fontspace.com/matrixtype-font-f125326)
 
 
 
@@ -47,15 +47,17 @@ const USE_CUSTOM_FONT    = true;      // Use bundled font (Matrixtype) or system
 ~~~
 Installation:
 
-1.Clone this repository into your GNOME extensions folder:
-~~~
-git clone https://github.com/Szuwax/gnome-panel-amoled-overlay ~/.local/share/gnome-shell/extensions/amoled-overlay@Szu
-~~~
-2.Restart GNOME Shell
-3.Enable the extension via Extensions mng
+1.Create the extension folder:
+```
+mkdir -p ~/.local/share/gnome-shell/extensions/amoled-overlay@Szu
+```
 
+2. Copy all files from this repository into that folder (Download ZIP from GitHub and extract, or copy manually).
+
+3.Restart GNOME Shell
+
+4.Enable the extension via Extensions mng
 
 
 ##
-This extension is a personal project I made for my own use, so I don't plan to publish it on the GNOME Extensions site. It works well for my setup, so I probably won't be actively maintaining it or fixing bugs unless I decide to add new features later on.
-Still, Im open for suggestions and ideas for how to make it better
+This extension is a personal project I made for my own use, so I don't plan to publish (but who knows) it on the GNOME Extensions site. It works well for my setup, so I probably won't be actively maintaining it or fixing bugs, but I do expect to make gradual improvements over time.
