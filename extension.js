@@ -7,25 +7,30 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 
-const INACTIVITY_MS   = 2000; // The delay with no mouse movement over the panel before the overlay appears(ms).
-const FADE_TIME_MS    = 1000; // The duration of the overlay's fade-in animation(ms).
-const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overlay(ms).
-const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
-const ACTIVE_OPACITY  = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
-const INIT_RETRIES    = 3;    // The number of times to retry positioning the overlay if it fails.
-const OVERLAY_COLOR = '#000000'; // The background color of the overlay. Use #000000 for pure black (AMOLED display).
-//Clock
-const CLOCK_COLOR        = '#006600';
-const CLOCK_SIZE         = 18;  // px
-const CLOCK_JITTERX      = 45;  //The maximum horizontal offset by which the clock can randomly shift left or right from its base position(px).
-const CLOCK_MARGIN_RIGHT = 90;  // The fixed distance between the clock and the right edge of the overlay(px).
-const USE_CUSTOM_FONT = true;   // true -use bundled font (Matrixtype), false -system default font
+const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears(ms).
+const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms).
+const INIT_DELAY_MS    = 6000; // Initial delay before positioning overlay(ms).
+const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking screen before repositioning overlay(ms).
+const INACTIVE_OPACITY = 0;    //  Overlay opacity when inactive (0-255). 0 = fully transparent
+const INIT_RETRIES     = 3;    //  Number of retries if initial positioning fails.
+const OVERLAY_COLOR    = '#000000'; // Overlay background color.
+
+//  Clock
+const CLOCK_JITTERX      = 45;   // Max horizontal jitter(px).
+const CLOCK_MARGIN_RIGHT = 150;  // Distance from right edge(px). Increased for clock+date
+
+// Date
+const ENABLE_DATE   = true;   // Show date next to clock
+const DATE_MARGIN   = 8;      // Space between clock and date(px)
+const DATE_US_STYLE = false;  // false -DD.MM.YY, true -MM.DD.YY
+
 
 export default class AMOLEDOverlayExtension extends Extension {
     constructor(metadata) {
         super(metadata);
         this._overlay = null;
         this._clock = null;
+        this._date = null;
 
         this._signals = [];
         this._timers = [];
@@ -37,18 +42,24 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._overlay = new St.Widget({
             style: `background-color: ${OVERLAY_COLOR};`,
             reactive: false,
-            opacity: ACTIVE_OPACITY,
+            opacity: INACTIVE_OPACITY,
         });
 
         this._clock = new St.Label({
             text: '',
-            style_class: USE_CUSTOM_FONT ? 'clock-label' : null,
-            style: USE_CUSTOM_FONT
-                ? null
-                : `font-size: ${CLOCK_SIZE}px; color: ${CLOCK_COLOR}; font-weight: normal;`,
+            style_class: 'clock-label',
             visible: false,
         });
         this._overlay.add_child(this._clock);
+
+        if (ENABLE_DATE) {
+            this._date = new St.Label({
+                text: '',
+                style_class: 'date-label',
+                visible: false,
+            });
+            this._overlay.add_child(this._date);
+        }
 
         Main.layoutManager.addTopChrome(this._overlay, {
             affectsInputRegion: false,
@@ -93,9 +104,10 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._overlay = null;
         }
         this._clock = null;
+        this._date = null;
     }
 
-    // Signals
+    //  Signals
     _connectSignals() {
         this._connect(global.stage, 'notify::allocation', () => this._tryInitialPosition());
         this._connect(Main.layoutManager, 'monitors-changed', () => this._tryInitialPosition());
@@ -104,7 +116,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (Main.messageTray) {
             this._connect(Main.messageTray, 'notify', () => {
                 this._hideClock();
-                this._overlay.opacity = ACTIVE_OPACITY;
+                this._overlay.opacity = INACTIVE_OPACITY;
                 this._resetIdleTimer();
             });
         }
@@ -192,30 +204,57 @@ export default class AMOLEDOverlayExtension extends Extension {
         const hh = String(now.getHours()).padStart(2, '0');
         const mm = String(now.getMinutes()).padStart(2, '0');
         this._clock.text = `${hh}:${mm}`;
+
+        if (ENABLE_DATE && this._date) {
+            const dd = String(now.getDate()).padStart(2, '0');
+            const mmStr = String(now.getMonth() + 1).padStart(2, '0');
+            const yy = String(now.getFullYear()).slice(-2);
+
+            if (DATE_US_STYLE) {
+                this._date.text = `${mmStr}.${dd}.${yy}`;
+            } else {
+                this._date.text = `${dd}.${mmStr}.${yy}`;
+            }
+        }
+
         this._positionClockWithJitter();
+
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._positionClockWithJitter();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _positionClockWithJitter() {
         if (!this._clock || !this._overlay) return;
 
         const jitterX = Math.floor((Math.random() * 2 - 1) * CLOCK_JITTERX);
-        const baseX = this._overlay.width - this._clock.width - CLOCK_MARGIN_RIGHT;
 
-        const minX = 0;
-        const maxX = Math.max(0, this._overlay.width - this._clock.width);
-        const x = Math.min(maxX, Math.max(minX, baseX + jitterX));
-        const y = Math.floor(this._overlay.height / 2 - this._clock.height / 2);
+        // Clock
+        const baseClockX = this._overlay.width - this._clock.width - CLOCK_MARGIN_RIGHT;
+        const minXClock = 0;
+        const maxXClock = Math.max(0, this._overlay.width - this._clock.width);
+        const clockX = Math.min(maxXClock, Math.max(minXClock, baseClockX + jitterX));
+        const clockY = Math.floor(this._overlay.height / 2 - this._clock.height / 2);
+        this._clock.set_position(clockX, clockY);
 
-        this._clock.set_position(x, y);
+        // Date
+        if (ENABLE_DATE && this._date) {
+            const dateX = clockX + this._clock.width + DATE_MARGIN;
+            const dateY = Math.floor(this._overlay.height / 2 - this._date.height / 2);
+            this._date.set_position(dateX, dateY);
+        }
     }
 
     _showClock() {
         this._updateClock();
         this._clock.show();
+        if (this._date) this._date.show();
     }
 
     _hideClock() {
         this._clock.hide();
+        if (this._date) this._date.hide();
     }
 
     // Interactions
@@ -223,9 +262,9 @@ export default class AMOLEDOverlayExtension extends Extension {
         const [x, y] = event.get_coords();
         const [ox, oy, ow, oh] = this._rectOf(this._overlay);
 
-        if (x >= ox && x <= ox + ow && y >= oy && y <= oy + oh) {
+        if (x >= ox && x <= ox + ow && y >= oy && y <= oh) {
             this._hideClock();
-            this._overlay.opacity = ACTIVE_OPACITY;
+            this._overlay.opacity = INACTIVE_OPACITY;
             this._resetIdleTimer();
         }
         return Clutter.EVENT_PROPAGATE;
