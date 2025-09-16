@@ -11,7 +11,7 @@ It displays a small digital clock that periodically shifts its horizontal positi
 ## Features
 
 - Black overlay on the top panel/Dash to Panel to reduce OLED burn-in  
-- Digital clock that periodically shifts horizontally to prevent static burn-in  
+- Digital clock with date that periodically shifts horizontally to prevent static burn-in  
 - Overlay appears after a period of inactivity **when the mouse is not over the panel**  
 - Smooth fade-in animation when overlay is activated  
 - Clock automatically updates every minute  
