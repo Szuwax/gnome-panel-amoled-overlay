@@ -94,14 +94,20 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._idleTimeout = 0;
 
         this._disconnectSignals();
+        if (this._clock) {
+            try { this._clock.destroy(); } catch {}
+            this._clock = null;
+        }
+        if (this._date) {
+            try { this._date.destroy(); } catch {}
+            this._date = null;
+        }
 
         if (this._overlay) {
-            Main.layoutManager.removeChrome(this._overlay);
-            this._overlay.destroy();
+            try { Main.layoutManager.removeChrome(this._overlay); } catch {}
+            try { this._overlay.destroy(); } catch {}
             this._overlay = null;
         }
-        this._clock = null;
-        this._date = null;
     }
 
     // Signals
@@ -113,7 +119,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (Main.messageTray) {
             this._connect(Main.messageTray, 'notify', () => {
                 this._hideClock();
-                this._overlay.opacity = INACTIVE_OPACITY;
+                if (this._overlay) this._overlay.opacity = INACTIVE_OPACITY;
                 this._resetIdleTimer();
             });
         }
@@ -196,7 +202,9 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _updateClock() {
-        if (!this._clock) return;
+        if (!this._clock || !this._date || !this._overlay) return;
+        if (!this._clock.get_parent?.() || !this._date.get_parent?.()) return;
+
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
         const mm = String(now.getMinutes()).padStart(2, '0');
@@ -221,7 +229,8 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _positionClockWithJitter() {
-        if (!this._clock || !this._overlay) return;
+        if (!this._clock || !this._date || !this._overlay) return;
+        if (!this._overlay.get_parent?.()) return;
 
         const jitterX = Math.floor((Math.random() * 2 - 1) * CLOCK_JITTERX);
 
@@ -241,17 +250,19 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     _showClock() {
         this._updateClock();
-        this._clock.show();
-        this._date.show();
+        if (this._clock) this._clock.show();
+        if (this._date) this._date.show();
     }
 
     _hideClock() {
-        this._clock.hide();
-        this._date.hide();
+        if (this._clock) this._clock.hide();
+        if (this._date) this._date.hide();
     }
 
     // Interactions
     _onMotion(_actor, event) {
+        if (!this._overlay) return Clutter.EVENT_PROPAGATE;
+
         const [x, y] = event.get_coords();
         const [ox, oy, ow, oh] = this._rectOf(this._overlay);
 
@@ -264,6 +275,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _fadeIn() {
+        if (!this._overlay) return;
         this._overlay.remove_all_transitions?.();
         this._overlay.ease({
             opacity: 255,
@@ -284,6 +296,8 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _repositionOverlay() {
+        if (!this._overlay) return false;
+
         const panel = Main.panel;
         if (!panel) {
             return false;
