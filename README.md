@@ -7,7 +7,7 @@ It displays a small digital clock that periodically shifts its horizontal positi
 
 
 Features:
-~~~
+
 Black transparent overlay on the top panel/dash to panel to reduce OLED burn-in
 Digital clock that periodically shifts horizontally to prevent static burn-in
 Overlay appears after a period of mouse inactivity
@@ -22,7 +22,8 @@ Repositions itself when:
 
 Retries several times to attach correctly after startup, with safe fallback if it fails
 Optional bundled custom font (Matrixtype) for the clock, or system default
-~~~
+(Download and install: Matrixtype-font Display Regular Style https://www.fontspace.com/matrixtype-font-f125326)
+
 Configuration:
 You can edit constants directly in extension.js to customize behavior:
 ~~~
@@ -43,6 +44,6 @@ const USE_CUSTOM_FONT    = true;      // Use bundled font (Matrixtype) or system
 Installation:
 ~~~
 1.Clone this repository into your GNOME extensions folder
-2.Restart GNOME Shell:
+2.Restart GNOME Shell
 3.Enable the extension via Extensions mng
 ~~~
