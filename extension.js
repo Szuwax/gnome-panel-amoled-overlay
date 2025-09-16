@@ -139,7 +139,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._signals.push([obj, obj.connect(sig, cb)]);
     }
 
-    // === Timer/Clock ===
+    // Timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
         if (this._idleTimeout) {
             try { GLib.source_remove(this._idleTimeout); } catch {}
