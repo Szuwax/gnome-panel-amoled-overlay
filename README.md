@@ -31,19 +31,20 @@ Configuration:
 
 You can edit constants directly in extension.js to customize behavior:
 ~~~
-const INACTIVITY_MS   = 2000; // Mouse inactivity before overlay appears (ms)
-const FADE_TIME_MS    = 1000; // Fade-in duration (ms)
-const INIT_DELAY_MS   = 6000; // Delay before initial positioning (ms)
-const UNLOCK_DELAY_MS = 6000; // Delay after unlocking before reposition (ms)
-const ACTIVE_OPACITY  = 0;    // Overlay opacity (0–255)
-const INIT_RETRIES    = 3;    // Number of retries for positioning
+const INACTIVITY_MS   = 2000; // Mouse inactivity time before the overlay appears(ms).
+const FADE_TIME_MS    = 1000; // The duration of the overlay's fade-in animation(ms).
+const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overlay(ms).
+const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
+const ACTIVE_OPACITY  = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
+const INIT_RETRIES    = 3;    // The number of times to retry positioning the overlay if it fails.
+const OVERLAY_COLOR = '#000000'; // The background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-// Clock
-const CLOCK_COLOR        = '#006600'; // Clock text color
-const CLOCK_SIZE         = 18;        // Clock text size (px)
-const CLOCK_JITTERX      = 45;        // Max horizontal shift (px)
-const CLOCK_MARGIN_RIGHT = 60;        // Distance from right edge (px)
-const USE_CUSTOM_FONT    = true;      // Use bundled font (Matrixtype) or system default
+//Clock
+const CLOCK_COLOR        = '#006600';
+const CLOCK_SIZE         = 18;  // px
+const CLOCK_JITTERX      = 45;  //The maximum horizontal offset by which the clock can randomly shift left or right from its base position(px).
+const CLOCK_MARGIN_RIGHT = 90;  // The fixed distance between the clock and the right edge of the overlay(px).
+const USE_CUSTOM_FONT = true;   // true -use font (Matrixtype), false -system default font
 ~~~
 Installation:
 
