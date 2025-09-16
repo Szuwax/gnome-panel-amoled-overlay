@@ -11,18 +11,17 @@ const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay ap
 const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms).
 const INIT_DELAY_MS    = 6000; // Initial delay before positioning overlay(ms).
 const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking screen before repositioning overlay(ms).
-const INACTIVE_OPACITY = 0;    //  Overlay opacity when inactive (0-255). 0 = fully transparent
-const INIT_RETRIES     = 3;    //  Number of retries if initial positioning fails.
-const OVERLAY_COLOR    = '#000000'; // Overlay background color.
+const INACTIVE_OPACITY = 0;    // Overlay opacity when inactive (0-255). 0 = fully transparent
+const INIT_RETRIES     = 3;    //   Number of retries if initial positioning fails.
+const OVERLAY_COLOR    = '#000000'; //  Overlay background color. USe #000000 for AMOLED display.
 
-//  Clock
-const CLOCK_JITTERX      = 45;   // Max horizontal jitter(px).
-const CLOCK_MARGIN_RIGHT = 150;  // Distance from right edge(px). Increased for clock+date
+// Clock
+const CLOCK_JITTERX      = 80;   // Max horizontal jitter(px).
+const CLOCK_MARGIN_RIGHT = 170;  // Distance from right edge(px). Increased for clock+date
 
 // Date
-const ENABLE_DATE   = true;   // Show date next to clock
-const DATE_MARGIN   = 8;      // Space between clock and date(px)
-const DATE_US_STYLE = false;  // false -DD.MM.YY, true -MM.DD.YY
+const DATE_MARGIN   = 6;      // Space between clock and date(px)
+const DATE_US_STYLE = false;  //  false → DD.MM.YY, true → MM.DD.YY
 
 
 export default class AMOLEDOverlayExtension extends Extension {
@@ -52,14 +51,12 @@ export default class AMOLEDOverlayExtension extends Extension {
         });
         this._overlay.add_child(this._clock);
 
-        if (ENABLE_DATE) {
-            this._date = new St.Label({
-                text: '',
-                style_class: 'date-label',
-                visible: false,
-            });
-            this._overlay.add_child(this._date);
-        }
+        this._date = new St.Label({
+            text: '',
+            style_class: 'date-label',
+            visible: false,
+        });
+        this._overlay.add_child(this._date);
 
         Main.layoutManager.addTopChrome(this._overlay, {
             affectsInputRegion: false,
@@ -107,7 +104,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._date = null;
     }
 
-    //  Signals
+    // Signals
     _connectSignals() {
         this._connect(global.stage, 'notify::allocation', () => this._tryInitialPosition());
         this._connect(Main.layoutManager, 'monitors-changed', () => this._tryInitialPosition());
@@ -205,16 +202,14 @@ export default class AMOLEDOverlayExtension extends Extension {
         const mm = String(now.getMinutes()).padStart(2, '0');
         this._clock.text = `${hh}:${mm}`;
 
-        if (ENABLE_DATE && this._date) {
-            const dd = String(now.getDate()).padStart(2, '0');
-            const mmStr = String(now.getMonth() + 1).padStart(2, '0');
-            const yy = String(now.getFullYear()).slice(-2);
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mmStr = String(now.getMonth() + 1).padStart(2, '0');
+        const yy = String(now.getFullYear()).slice(-2);
 
-            if (DATE_US_STYLE) {
-                this._date.text = `${mmStr}.${dd}.${yy}`;
-            } else {
-                this._date.text = `${dd}.${mmStr}.${yy}`;
-            }
+        if (DATE_US_STYLE) {
+            this._date.text = `${mmStr}.${dd}.${yy}`;
+        } else {
+            this._date.text = `${dd}.${mmStr}.${yy}`;
         }
 
         this._positionClockWithJitter();
@@ -239,22 +234,20 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._clock.set_position(clockX, clockY);
 
         // Date
-        if (ENABLE_DATE && this._date) {
-            const dateX = clockX + this._clock.width + DATE_MARGIN;
-            const dateY = Math.floor(this._overlay.height / 2 - this._date.height / 2);
-            this._date.set_position(dateX, dateY);
-        }
+        const dateX = clockX + this._clock.width + DATE_MARGIN;
+        const dateY = Math.floor(this._overlay.height / 2 - this._date.height / 2);
+        this._date.set_position(dateX, dateY);
     }
 
     _showClock() {
         this._updateClock();
         this._clock.show();
-        if (this._date) this._date.show();
+        this._date.show();
     }
 
     _hideClock() {
         this._clock.hide();
-        if (this._date) this._date.hide();
+        this._date.hide();
     }
 
     // Interactions
