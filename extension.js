@@ -9,8 +9,8 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const INACTIVITY_MS   = 2000; // Mouse inactivity time before the overlay appears(ms).
 const FADE_TIME_MS    = 1000; // The duration of the overlay's fade-in animation(ms).
-const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overlay(ms). Do not edit. 
-const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms). Do not edit. 
+const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overlay(ms).
+const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
 const ACTIVE_OPACITY  = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
 const INIT_RETRIES    = 3;    // The number of times to retry positioning the overlay if it fails.
 
