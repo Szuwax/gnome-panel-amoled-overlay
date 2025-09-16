@@ -1,6 +1,6 @@
 .clock-label {
-  font-family: "MatrixType Display";
-  font-size: 18px;
-  color: #006600;
-  font-weight: normal;
+    font-family: "MatrixType Display", monospace;
+    font-size: 18px;
+    color: #006600;
+    font-weight: normal;
 }
