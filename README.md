@@ -31,7 +31,7 @@ Configuration:
 
 You can edit constants directly in extension.js to customize behavior:
 ~~~
-const INACTIVITY_MS   = 2000; // Mouse inactivity time before the overlay appears(ms).
+const INACTIVITY_MS   = 2000; // The delay with no mouse movement over the panel before the overlay appears(ms).
 const FADE_TIME_MS    = 1000; // The duration of the overlay's fade-in animation(ms).
 const INIT_DELAY_MS   = 6000; // The initial delay before positioning the overlay(ms).
 const UNLOCK_DELAY_MS = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
