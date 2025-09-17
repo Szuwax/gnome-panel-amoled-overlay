@@ -44,6 +44,7 @@ CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the containe
 CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the container and the right edge of the overlay(px).
 DATE_MARGIN        = 6;    // Space between clock and date(px)
 DATE_US_STYLE      = false;  //  false -DD.MM.YY, true -MM.DD.YY
+SHOW_DATE          = true;  // true -show date
 ~~~
 You can edit font color and font size in stylesheet.css
 
