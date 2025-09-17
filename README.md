@@ -31,21 +31,19 @@ Configuration:
 
 You can edit constants directly in extension.js to customize behavior:
 ~~~
-const INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
-const FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
-const INIT_DELAY_MS    = 6000;// The initial delay before positioning the overlay(ms).
-const UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
-const INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
-const INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
-const OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use #000000 for pure black (AMOLED display).
+INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
+FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
+INIT_DELAY_MS    = 6000;// The initial delay before positioning the overlay(ms).
+UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
+INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
+INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
+OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-// Clock
-const CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the clock can randomly shift left or right from its base position(px).
-const CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the clock and the right edge of the overlay(px).
-
-// Date
-const DATE_MARGIN   = 6;      // Space between clock and date(px)
-const DATE_US_STYLE = false;  //  false -DD.MM.YY, true -MM.DD.YY
+// Time
+CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the container and the right edge of the overlay(px).
+DATE_MARGIN        = 6;    // Space between clock and date(px)
+DATE_US_STYLE      = false;  //  false -DD.MM.YY, true -MM.DD.YY
 ~~~
 You can edit font color and font size in stylesheet.css
 
