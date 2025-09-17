@@ -8,7 +8,7 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
 const FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
-const INIT_DELAY_MS    = 6000;// The initial delay before positioning the overlay(ms).
+const INIT_DELAY_MS    = 6000; // The initial delay before positioning the overlay(ms).
 const UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
 const INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
 const INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
@@ -18,7 +18,8 @@ const OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use
 const CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
 const CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the container and the right edge of the overlay(px).
 const DATE_MARGIN        = 6;    // Space between clock and date(px)
-const DATE_US_STYLE      = false;  //  false -DD.MM.YY, true -MM.DD.YY
+const DATE_US_STYLE      = false; // false -DD.MM.YY, true -MM.DD.YY
+const SHOW_DATE          = true;  // true -show date
 
 export default class AMOLEDOverlayExtension extends Extension {
     constructor(metadata) {
@@ -41,7 +42,7 @@ export default class AMOLEDOverlayExtension extends Extension {
             opacity: INACTIVE_OPACITY,
         });
 
-        //Container for time
+        // Container for time
         this._container = new St.BoxLayout({
             style_class: 'amajac-clock-container',
             x_align: Clutter.ActorAlign.CENTER,
@@ -57,13 +58,15 @@ export default class AMOLEDOverlayExtension extends Extension {
         });
         this._container.add_child(this._clock);
 
-        this._date = new St.Label({
-            text: '',
-            style_class: 'date-label',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._date.set_style(`margin-left: ${DATE_MARGIN}px;`);
-        this._container.add_child(this._date);
+        if (SHOW_DATE) {
+            this._date = new St.Label({
+                text: '',
+                style_class: 'date-label',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._date.set_style(`margin-left: ${DATE_MARGIN}px;`);
+            this._container.add_child(this._date);
+        }
 
         this._overlay.add_child(this._container);
 
@@ -165,8 +168,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     // Timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
         if (this._idleTimeout) {
-            try { GLib.source_remove(this._idleTimeout); } catch {}
-            this._timers = this._timers.filter(id => id !== this._idleTimeout);
+            this._removeTimer(this._idleTimeout);
             this._idleTimeout = 0;
         }
 
@@ -210,21 +212,23 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _updateClock() {
-        if (!this._clock || !this._date || !this._container) return;
+        if (!this._clock || !this._container) return;
 
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
         const mm = String(now.getMinutes()).padStart(2, '0');
         this._clock.text = `${hh}:${mm}`;
 
-        const dd = String(now.getDate()).padStart(2, '0');
-        const mmStr = String(now.getMonth() + 1).padStart(2, '0');
-        const yy = String(now.getFullYear()).slice(-2);
+        if (this._date) {
+            const dd = String(now.getDate()).padStart(2, '0');
+            const mmStr = String(now.getMonth() + 1).padStart(2, '0');
+            const yy = String(now.getFullYear()).slice(-2);
 
-        if (DATE_US_STYLE) {
-            this._date.text = `${mmStr}.${dd}.${yy}`;
-        } else {
-            this._date.text = `${dd}.${mmStr}.${yy}`;
+            if (DATE_US_STYLE) {
+                this._date.text = `${mmStr}.${dd}.${yy}`;
+            } else {
+                this._date.text = `${dd}.${mmStr}.${yy}`;
+            }
         }
 
         this._positionContainerWithJitter();
