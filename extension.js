@@ -7,22 +7,22 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import UPowerGlib from 'gi://UPowerGlib';
 
-const INACTIVITY_MS    = 2000; // Delay with no mouse movement over the panel before the overlay appears(ms)
+const INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
 const FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
 const INIT_DELAY_MS    = 6000; // Initial delay before positioning the overlay(ms)
 const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking the screen before repositioning the overlay(ms)
-const INACTIVE_OPACITY = 0;    // Opacity of the transparent overlay (0–255). 0 = fully transparent
-const INIT_RETRIES     = 3;    // Number of times to retry positioning the overlay if it fails
+const INACTIVE_OPACITY = 0; // Opacity of the transparent overlay (0–255). 0 = fully transparent
+const INIT_RETRIES     = 3; // Number of times to retry positioning the overlay if it fails
 const OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-const B_JITTERX        = 100; // The maximum horizontal offset(px).
+const B_JITTERX        = 100; // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
 
-const DATE_MARGIN      = 6;  // Space between clock and date(px)
-const USER_MARGIN      = 6;  // Space between battery and username(px)
+const DATE_MARGIN      = 6; //Space between clock and date(px)
+const USER_MARGIN      = 6; // Space between battery and username(px)
 
 const SHOW_CLOCK       = true;
 const SHOW_DATE        = true;
-const SHOW_BATTERY     = true;
+const SHOW_BATTERY     = true; //Battery info with charging status
 const SHOW_USERNAME    = true;
 
 export default class AMOLEDOverlayExtension extends Extension {
@@ -42,11 +42,9 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._batterySignal = null;
 
         this._signals = [];
-        this._timers = [];
         this._idleTimeout = 0;
-        this._initTries = INIT_RETRIES;
-
         this._clockTickId = 0;
+        this._initTries = INIT_RETRIES;
 
         this._isVisible = false;
         this._isAnimating = false;
@@ -144,40 +142,28 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._connectSignals();
 
         // Initial positioning & text
-        const initTimeoutId = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            INIT_DELAY_MS,
-            () => {
-                const ok = this._repositionOverlay();
-                if (ok) {
-                    this._resetIdleTimer();
-                    this._initialTextUpdate();
-                    this._removeTimer(initTimeoutId);
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                if (--this._initTries > 0) {
-                    return GLib.SOURCE_CONTINUE;
-                } else {
-                    this._removeTimer(initTimeoutId);
-                    return GLib.SOURCE_REMOVE;
-                }
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_MS / 1000, () => {
+            const ok = this._repositionOverlay();
+            if (ok) {
+                this._resetIdleTimer();
+                this._initialTextUpdate();
+                return GLib.SOURCE_REMOVE;
             }
-        );
-        this._timers.push(initTimeoutId);
+            if (--this._initTries > 0) {
+                return GLib.SOURCE_CONTINUE;
+            }
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     disable() {
         if (this._idleTimeout) {
-            this._removeTimer(this._idleTimeout);
+            GLib.source_remove(this._idleTimeout);
             this._idleTimeout = 0;
         }
 
-        this._timers.forEach(id => this._removeTimer(id));
-        this._timers = [];
-
         if (this._clockTickId) {
-            this._removeTimer(this._clockTickId);
+            GLib.source_remove(this._clockTickId);
             this._clockTickId = 0;
         }
 
@@ -188,7 +174,11 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._batterySignal = null;
         }
         this._batteryDevice = null;
-        this._upClient = null;
+
+        if (this._upClient) {
+            this._upClient.run_dispose?.();
+            this._upClient = null;
+        }
 
         if (this._container) {
             this._container.destroy();
@@ -241,7 +231,6 @@ export default class AMOLEDOverlayExtension extends Extension {
         }
     }
 
-    // Initial text update
     _initialTextUpdate() {
         this._updateClock();
         this._updateBatteryLabel();
@@ -266,16 +255,10 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         if (Main.screenShield) {
             this._signals.push([Main.screenShield, Main.screenShield.connect('hidden', () => {
-                const timeoutId = GLib.timeout_add(
-                    GLib.PRIORITY_DEFAULT,
-                    UNLOCK_DELAY_MS,
-                    () => {
-                        this._repositionOverlay();
-                        this._removeTimer(timeoutId);
-                        return GLib.SOURCE_REMOVE;
-                    }
-                );
-                this._timers.push(timeoutId);
+                GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_MS / 1000, () => {
+                    this._repositionOverlay();
+                    return GLib.SOURCE_REMOVE;
+                });
             })]);
         }
     }
@@ -291,53 +274,55 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._signals = [];
     }
 
-    // Reset idle timer
+    // Idle timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
         if (this._idleTimeout) {
-            this._removeTimer(this._idleTimeout);
+            GLib.source_remove(this._idleTimeout);
             this._idleTimeout = 0;
         }
 
-        const id = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            delay,
-            () => {
-                this._fadeIn();
-                this._removeTimer(id);
-                this._idleTimeout = 0;
-                return GLib.SOURCE_REMOVE;
-            }
-        );
-        this._idleTimeout = id;
-        this._timers.push(id);
+        if (delay % 1000 === 0) {
+            this._idleTimeout = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT,
+                delay / 1000,
+                () => {
+                    this._fadeIn();
+                    this._idleTimeout = 0;
+                    return GLib.SOURCE_REMOVE;
+                }
+            );
+        } else {
+            this._idleTimeout = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                delay,
+                () => {
+                    this._fadeIn();
+                    this._idleTimeout = 0;
+                    return GLib.SOURCE_REMOVE;
+                }
+            );
+        }
     }
 
-    // Tick
+    // Clock tick
     _armClockTick() {
         const now = Date.now();
         const msToNextMinute = 60000 - (now % 60000);
 
-        const id1 = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            msToNextMinute,
-            () => {
-                this._updateUI();
-                this._clockTickId = GLib.timeout_add_seconds(
-                    GLib.PRIORITY_DEFAULT,
-                    60,
-                    () => {
-                        this._updateUI();
-                        return GLib.SOURCE_CONTINUE;
-                    }
-                );
-                this._removeTimer(id1);
-                return GLib.SOURCE_REMOVE;
-            }
-        );
-        this._timers.push(id1);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, msToNextMinute, () => {
+            this._updateUI();
+            this._clockTickId = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT,
+                60,
+                () => {
+                    this._updateUI();
+                    return GLib.SOURCE_CONTINUE;
+                }
+            );
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
-    // Time update
     _updateClock() {
         if (!this._clock && !this._date) return;
 
@@ -358,17 +343,13 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._avoidOverlap();
     }
 
-    // Update all labels
     _updateUI() {
-        if (!this._isVisible) return;
         this._updateClock();
         this._updateBatteryLabel();
     }
 
     // Positioning
     _computeJitteredX(baseX, containerWidth) {
-        if (!this._overlay) return baseX;
-
         let jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
         const minX = 0;
         const maxX = Math.max(0, this._overlay.width - containerWidth);
@@ -376,8 +357,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _positionContainer(container, side) {
-        if (!container || !this._overlay) return;
-        if (!this._overlay.get_parent?.()) return;
+        if (!container || !this._overlay?.get_parent?.()) return;
 
         const containerWidth = container.width;
         const overlayWidth = this._overlay.width;
@@ -399,7 +379,8 @@ export default class AMOLEDOverlayExtension extends Extension {
             const rightX = this._container.x;
             const leftX = this._leftContainer.x + this._leftContainer.width;
             if (leftX > rightX) {
-                this._leftContainer.set_x(rightX - this._leftContainer.width);
+                this._positionContainer(this._container, "right");
+                this._positionContainer(this._leftContainer, "left");
             }
         }
     }
@@ -416,6 +397,7 @@ export default class AMOLEDOverlayExtension extends Extension {
             duration: FADE_TIME_MS,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             onComplete: () => {
+                if (!this._overlay) return;
                 this._isAnimating = false;
                 this._isVisible = true;
                 this._updateUI();
@@ -445,14 +427,11 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (this._leftContainer) this._leftContainer.hide();
     }
 
-    // Reposition
     _repositionOverlay() {
         if (!this._overlay) return false;
 
         const panel = Main.panel;
-        if (!panel) {
-            return false;
-        }
+        if (!panel) return false;
 
         const [x, y] = panel.get_transformed_position();
         const w = panel.width;
@@ -465,13 +444,5 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._positionContainer(this._leftContainer, "left");
         this._avoidOverlap();
         return true;
-    }
-
-    // Helpers
-    _removeTimer(id) {
-        GLib.source_remove(id);
-        this._timers = this._timers.filter(x => x !== id);
-        if (this._clockTickId === id) this._clockTickId = 0;
-        if (this._idleTimeout === id) this._idleTimeout = 0;
     }
 }
