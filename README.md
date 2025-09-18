@@ -11,7 +11,7 @@ It displays a small digital clock that periodically shifts its horizontal positi
 ## Features
 
 - Black overlay on the top panel/Dash to Panel to reduce OLED burn-in  
-- Digital clock with date that periodically shifts horizontally to prevent static burn-in  
+- Digital clock with date, battery status an username that periodically shifts horizontally to prevent static burn-in  
 - Overlay appears after a period of inactivity **when the mouse is not over the panel**  
 - Smooth fade-in animation when overlay is activated  
 - Clock automatically updates every minute  
@@ -31,20 +31,23 @@ Configuration:
 
 You can edit constants directly in extension.js to customize behavior:
 ~~~
-INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
-FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
-INIT_DELAY_MS    = 6000;// The initial delay before positioning the overlay(ms).
-UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
-INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
-INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
-OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use #000000 for pure black (AMOLED display).
+INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
+FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
+INIT_DELAY_MS    = 6000; // Initial delay before positioning the overlay(ms)
+UNLOCK_DELAY_MS  = 6000; // Delay after unlocking the screen before repositioning the overlay(ms)
+INACTIVE_OPACITY = 0; // Opacity of the transparent overlay (0–255). 0 = fully transparent
+INIT_RETRIES     = 3; // Number of times to retry positioning the overlay if it fails
+OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-// Time
-CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
-CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the container and the right edge of the overlay(px).
-DATE_MARGIN        = 6;    // Space between clock and date(px)
-DATE_US_STYLE      = false;  //  false -DD.MM.YY, true -MM.DD.YY
-SHOW_DATE          = true;  // true -show date
+B_JITTERX        = 100; // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+
+DATE_MARGIN      = 6; // Space between clock and date(px)
+USER_MARGIN      = 6;//  Space between battery and username(px)
+
+SHOW_CLOCK       = true;
+SHOW_DATE        = true;
+SHOW_BATTERY     = true;
+SHOW_USERNAME    = true;
 ~~~
 You can edit font color and font size in stylesheet.css
 
