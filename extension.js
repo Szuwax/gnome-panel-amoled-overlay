@@ -9,16 +9,16 @@ import UPowerGlib from 'gi://UPowerGlib';
 
 const INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
 const FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
-const INIT_DELAY_MS    = 6000; // Initial delay before positioning the overlay(ms)
-const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking the screen before repositioning the overlay(ms)
-const INACTIVE_OPACITY = 0; // Opacity of the transparent overlay (0–255). 0 = fully transparent
-const INIT_RETRIES     = 3; // Number of times to retry positioning the overlay if it fails
+const INIT_DELAY_S     = 6;    // Initial delay before positioning the overlay(sec)
+const UNLOCK_DELAY_S   = 6;    // Delay after unlocking the screen before repositioning the overlay(sec)
+const INACTIVE_OPACITY = 0;    // Opacity of the transparent overlay (0–255). 0 = fully transparent
+const INIT_RETRIES     = 3;    // Number of times to retry positioning the overlay if it fails
 const OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-const B_JITTERX        = 100; // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+const B_JITTERX        = 180;  // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
 
-const DATE_MARGIN      = 6; //Space between clock and date(px)
-const USER_MARGIN      = 6; // Space between battery and username(px)
+const DATE_MARGIN      = 6;    //Space between clock and date(px)
+const USER_MARGIN      = 6;    // Space between battery and username(px)
 
 const SHOW_CLOCK       = true;
 const SHOW_DATE        = true;
@@ -142,7 +142,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._connectSignals();
 
         // Initial positioning & text
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_MS / 1000, () => {
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_S, () => {
             const ok = this._repositionOverlay();
             if (ok) {
                 this._resetIdleTimer();
@@ -255,7 +255,7 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         if (Main.screenShield) {
             this._signals.push([Main.screenShield, Main.screenShield.connect('hidden', () => {
-                GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_MS / 1000, () => {
+                GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_S, () => {
                     this._repositionOverlay();
                     return GLib.SOURCE_REMOVE;
                 });
