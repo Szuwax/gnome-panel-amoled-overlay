@@ -6,8 +6,7 @@ That’s why this extension was created.
 Black overlay on the top panel/dash to panel to reduce the risk of OLED burn-in.
 It displays a small digital clock that periodically shifts its horizontal position to prevent static burn-in.
 
-![Overlay with clock](ss/1.png)
-![wITHOUT OVERLAY](ss/2.png)
+![Overlay with clock](ss/3.png)
 ## Features
 
 - Black overlay on the top panel/Dash to Panel to reduce OLED burn-in  
