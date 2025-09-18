@@ -451,7 +451,7 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         const panel = Main.panel;
         if (!panel) {
-            return false; // safety fallback
+            return false;
         }
 
         const [x, y] = panel.get_transformed_position();
