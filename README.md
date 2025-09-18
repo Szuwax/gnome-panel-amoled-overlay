@@ -32,16 +32,16 @@ You can edit constants directly in extension.js to customize behavior:
 ~~~
 INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
 FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
-INIT_DELAY_MS    = 6000; // Initial delay before positioning the overlay(ms)
-UNLOCK_DELAY_MS  = 6000; // Delay after unlocking the screen before repositioning the overlay(ms)
-INACTIVE_OPACITY = 0; // Opacity of the transparent overlay (0–255). 0 = fully transparent
-INIT_RETRIES     = 3; // Number of times to retry positioning the overlay if it fails
+INIT_DELAY_S     = 6;    // Initial delay before positioning the overlay(sec)
+UNLOCK_DELAY_S   = 6;    // Delay after unlocking the screen before repositioning the overlay(sec)
+INACTIVE_OPACITY = 0;    // Opacity of the transparent overlay (0–255). 0 = fully transparent
+INIT_RETRIES     = 3;    // Number of times to retry positioning the overlay if it fails
 OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-B_JITTERX        = 100; // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+B_JITTERX        = 180;  // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
 
-DATE_MARGIN      = 6; // Space between clock and date(px)
-USER_MARGIN      = 6;//  Space between battery and username(px)
+DATE_MARGIN      = 6;    //Space between clock and date(px)
+USER_MARGIN      = 6;    // Space between battery and username(px)
 
 SHOW_CLOCK       = true;
 SHOW_DATE        = true;
