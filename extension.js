@@ -19,11 +19,13 @@ const B_JITTERX        = 100; // The maximum horizontal offset by which the cont
 
 const DATE_MARGIN      = 6; // Space between clock and date(px)
 const USER_MARGIN      = 6;//  Space between battery and username(px)
+const SAFE_MARGIN      = 20; //Minimal space between left and right containers(px).
 
 const SHOW_CLOCK       = true;
 const SHOW_DATE        = true;
 const SHOW_BATTERY     = true;
 const SHOW_USERNAME    = true;
+
 
 export default class AMOLEDOverlayExtension extends Extension {
     constructor(metadata) {
@@ -47,6 +49,9 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._initTries = INIT_RETRIES;
 
         this._state = 'hidden'; // hidden,showing, visible
+        this._lastMotionTs = 0;
+
+        this._jitterOffsets = { right: 0, left: 0 };
 
         // Date format
         this._dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -334,6 +339,9 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._date.text = this._dateFormatter.format(now);
         }
 
+        this._jitterOffsets.right = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
+        this._jitterOffsets.left = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
+
         this._positionContainer(this._container, "right");
         this._positionContainer(this._leftContainer, "left");
         this._avoidOverlap();
@@ -346,10 +354,9 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     // Positioning
-    _computeJitteredX(baseX, containerWidth) {
+    _computeJitteredX(baseX, containerWidth, side) {
         if (!this._overlay) return baseX;
-
-        let jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
+        let jitterX = this._jitterOffsets[side] || 0;
         const minX = 0;
         const maxX = Math.max(0, this._overlay.width - containerWidth);
         return Math.min(maxX, Math.max(minX, baseX + jitterX));
@@ -358,6 +365,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     _positionContainer(container, side) {
         if (!container || !this._overlay) return;
         if (!this._overlay.get_parent?.()) return;
+        if (container.width === 0 || container.height === 0) return;
 
         const containerWidth = container.width;
         const overlayWidth = this._overlay.width;
@@ -369,7 +377,7 @@ export default class AMOLEDOverlayExtension extends Extension {
             baseX = Math.floor(overlayWidth * 0.25 - containerWidth / 2);
         }
 
-        const containerX = this._computeJitteredX(baseX, containerWidth);
+        const containerX = this._computeJitteredX(baseX, containerWidth, side);
         const containerY = Math.floor(this._overlay.height / 2 - container.height / 2);
         container.set_position(containerX, containerY);
     }
@@ -377,13 +385,19 @@ export default class AMOLEDOverlayExtension extends Extension {
     _avoidOverlap() {
         if (this._container && this._leftContainer) {
             const rightX = this._container.x;
-            const leftX = this._leftContainer.x + this._leftContainer.width;
-            if (leftX > rightX) {
-                this._leftContainer.set_x(rightX - this._leftContainer.width);
+            const rightW = this._container.width;
+            const leftX = this._leftContainer.x;
+            const leftW = this._leftContainer.width;
+
+            const rightEdge = rightX;
+            const leftEdge = leftX + leftW;
+
+            if (leftEdge + SAFE_MARGIN > rightEdge) {
+                const newX = Math.max(0, rightEdge - leftW - SAFE_MARGIN);
+                this._leftContainer.set_x(newX);
             }
         }
     }
-
 
     _fadeIn() {
         if (!this._overlay) return;
@@ -430,10 +444,14 @@ export default class AMOLEDOverlayExtension extends Extension {
     _onMotion(_actor, event) {
         if (!this._overlay) return Clutter.EVENT_PROPAGATE;
 
+        const now = Date.now();
+        if (now - this._lastMotionTs < 50) return Clutter.EVENT_PROPAGATE;
+        this._lastMotionTs = now;
+
         const [x, y] = event.get_coords();
         const [ox, oy, ow, oh] = this._rectOf(this._overlay);
 
-        if (x >= ox && x <= ox + ow && y >= oy && y <= oh) {
+        if (x >= ox && x <= ox + ow && y >= oy && y <= oy + oh) {
             this._hideOverlay();
             this._resetIdleTimer();
         }
