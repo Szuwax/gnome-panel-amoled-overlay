@@ -5,21 +5,25 @@ import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import UPowerGlib from 'gi://UPowerGlib';
 
-const INACTIVITY_MS    = 2000; //The delay with no mouse movement over the panel before the overlay appears(ms).
-const FADE_TIME_MS     = 1000; // The duration of the overlay's fade-in animation(ms).
-const INIT_DELAY_MS    = 6000; // The initial delay before positioning the overlay(ms).
-const UNLOCK_DELAY_MS  = 6000; // The delay after unlocking the screen before repositioning the overlay(ms).
-const INACTIVE_OPACITY = 0;    // The opacity of the transparent overlay(0-255). 0 = fully transparent
-const INIT_RETRIES     = 3;    // The number of times to retry positioning the overlay if it fails.
-const OVERLAY_COLOR    = '#000000';  // The background color of the overlay. Use #000000 for pure black (AMOLED display).
+const INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
+const FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
+const INIT_DELAY_MS    = 6000; // Initial delay before positioning the overlay(ms)
+const UNLOCK_DELAY_MS  = 6000; // Delay after unlocking the screen before repositioning the overlay(ms)
+const INACTIVE_OPACITY = 0; // Opacity of the transparent overlay (0–255). 0 = fully transparent
+const INIT_RETRIES     = 3; // Number of times to retry positioning the overlay if it fails
+const OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
 
-// Time
-const CLOCK_JITTERX      = 80;   //The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
-const CLOCK_MARGIN_RIGHT = 170;  // The fixed distance between the container and the right edge of the overlay(px).
-const DATE_MARGIN        = 6;    // Space between clock and date(px)
-const DATE_US_STYLE      = false; // false -DD.MM.YY, true -MM.DD.YY
-const SHOW_DATE          = true;  // true -show date
+const B_JITTERX        = 100; // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+
+const DATE_MARGIN      = 6; // Space between clock and date(px)
+const USER_MARGIN      = 6;//  Space between battery and username(px)
+
+const SHOW_CLOCK       = true;
+const SHOW_DATE        = true;
+const SHOW_BATTERY     = true;
+const SHOW_USERNAME    = true;
 
 export default class AMOLEDOverlayExtension extends Extension {
     constructor(metadata) {
@@ -29,10 +33,27 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._date = null;
         this._container = null;
 
+        this._leftContainer = null;
+        this._batteryLabel = null;
+        this._userLabel = null;
+
+        this._upClient = null;
+        this._batteryDevice = null;
+        this._batterySignal = null;
+
         this._signals = [];
         this._timers = [];
         this._idleTimeout = 0;
         this._initTries = INIT_RETRIES;
+
+        this._state = 'hidden'; // hidden,showing, visible
+
+        // Date format
+        this._dateFormatter = new Intl.DateTimeFormat(undefined, {
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit'
+        });
     }
 
     enable() {
@@ -42,33 +63,75 @@ export default class AMOLEDOverlayExtension extends Extension {
             opacity: INACTIVE_OPACITY,
         });
 
-        // Container for time
-        this._container = new St.BoxLayout({
-            style_class: 'amajac-clock-container',
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-            vertical: false,
-            visible: false,
-        });
-
-        this._clock = new St.Label({
-            text: '',
-            style_class: 'clock-label',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._container.add_child(this._clock);
-
-        if (SHOW_DATE) {
-            this._date = new St.Label({
-                text: '',
-                style_class: 'date-label',
+        // Right container
+        if (SHOW_CLOCK || SHOW_DATE) {
+            this._container = new St.BoxLayout({
+                style_class: 'amajac-clock-container',
+                x_align: Clutter.ActorAlign.CENTER,
                 y_align: Clutter.ActorAlign.CENTER,
+                vertical: false,
+                visible: false,
             });
-            this._date.set_style(`margin-left: ${DATE_MARGIN}px;`);
-            this._container.add_child(this._date);
+
+            if (SHOW_CLOCK) {
+                this._clock = new St.Label({
+                    text: '',
+                    style_class: 'clock-label',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                this._container.add_child(this._clock);
+            }
+
+            if (SHOW_DATE) {
+                this._date = new St.Label({
+                    text: '',
+                    style_class: 'date-label',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                if (SHOW_CLOCK) {
+                    this._date.set_style(`margin-left: ${DATE_MARGIN}px;`);
+                }
+                this._container.add_child(this._date);
+            }
+
+            this._overlay.add_child(this._container);
         }
 
-        this._overlay.add_child(this._container);
+        // Left container
+        if (SHOW_BATTERY || SHOW_USERNAME) {
+            this._leftContainer = new St.BoxLayout({
+                style_class: 'amajac-info-container',
+                x_align: Clutter.ActorAlign.START,
+                y_align: Clutter.ActorAlign.CENTER,
+                vertical: false,
+                visible: false,
+            });
+
+            if (SHOW_BATTERY) {
+                this._batteryLabel = new St.Label({
+                    text: '',
+                    style_class: 'clock-label',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                this._leftContainer.add_child(this._batteryLabel);
+                this._initBattery();
+            }
+
+            if (SHOW_USERNAME) {
+                const username = GLib.get_user_name();
+                this._userLabel = new St.Label({
+                    text: username,
+                    style_class: 'clock-label',
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                if (SHOW_BATTERY) {
+                    this._userLabel.set_style(`margin-left: ${USER_MARGIN}px;`);
+                }
+                this._leftContainer.add_child(this._userLabel);
+            }
+
+            this._overlay.add_child(this._leftContainer);
+        }
 
         Main.layoutManager.addTopChrome(this._overlay, {
             affectsInputRegion: false,
@@ -78,6 +141,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._armClockTick();
         this._connectSignals();
 
+        // Initial positioning
         const initTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT,
             INIT_DELAY_MS,
@@ -85,6 +149,7 @@ export default class AMOLEDOverlayExtension extends Extension {
                 const ok = this._tryInitialPosition();
                 if (ok) {
                     this._resetIdleTimer();
+                    this._updateUI();
                     this._removeTimer(initTimeoutId);
                     return GLib.SOURCE_REMOVE;
                 }
@@ -101,23 +166,65 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     disable() {
-        this._timers.forEach(id => { try { GLib.source_remove(id); } catch {} });
+        this._timers.forEach(id => { GLib.source_remove(id); });
         this._timers = [];
         this._idleTimeout = 0;
-
         this._disconnectSignals();
 
+        if (this._batteryDevice && this._batterySignal) {
+            this._batteryDevice.disconnect(this._batterySignal);
+            this._batterySignal = null;
+        }
+        this._batteryDevice = null;
+        this._upClient = null;
+
         if (this._container) {
-            try { this._container.destroy(); } catch {}
+            this._container.destroy();
             this._container = null;
             this._clock = null;
             this._date = null;
         }
 
+        if (this._leftContainer) {
+            this._leftContainer.destroy();
+            this._leftContainer = null;
+            this._batteryLabel = null;
+            this._userLabel = null;
+        }
+
         if (this._overlay) {
-            try { Main.layoutManager.removeChrome(this._overlay); } catch {}
-            try { this._overlay.destroy(); } catch {}
+            Main.layoutManager.removeChrome(this._overlay);
+            this._overlay.destroy();
             this._overlay = null;
+        }
+
+        this._state = 'hidden';
+    }
+
+    // Battery
+    _initBattery() {
+        try {
+            this._upClient = UPowerGlib.Client.new();
+            const devices = this._upClient.get_devices();
+            this._batteryDevice = devices.find(d => d.kind === UPowerGlib.DeviceKind.BATTERY);
+
+            if (this._batteryDevice) {
+                this._batterySignal = this._batteryDevice.connect('notify::percentage', () => {
+                    this._updateBatteryLabel();
+                });
+                this._updateBatteryLabel();
+            }
+        } catch (e) {
+            logError(e);
+            if (this._batteryLabel) this._batteryLabel.text = "??%";
+        }
+    }
+
+    _updateBatteryLabel() {
+        if (this._batteryLabel && this._batteryDevice && SHOW_BATTERY) {
+            const percent = Math.round(this._batteryDevice.percentage);
+            const charging = this._batteryDevice.state === UPowerGlib.DeviceState.CHARGING;
+            this._batteryLabel.text = `${charging ? "C" : ""}${percent}%`;
         }
     }
 
@@ -129,8 +236,7 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         if (Main.messageTray) {
             this._connect(Main.messageTray, 'notify', () => {
-                this._hideClock();
-                if (this._overlay) this._overlay.opacity = INACTIVE_OPACITY;
+                this._hideOverlay();
                 this._resetIdleTimer();
             });
         }
@@ -154,7 +260,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     _disconnectSignals() {
         if (this._signals) {
             this._signals.forEach(([obj, id]) => {
-                try { obj.disconnect?.(id); } catch {}
+                obj.disconnect?.(id);
             });
             this._signals = [];
         }
@@ -165,7 +271,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._signals.push([obj, obj.connect(sig, cb)]);
     }
 
-    // Timer
+    // Reset idle timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
         if (this._idleTimeout) {
             this._removeTimer(this._idleTimeout);
@@ -186,6 +292,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._timers.push(id);
     }
 
+    // Tick
     _armClockTick() {
         const now = Date.now();
         const msToNextMinute = 60000 - (now % 60000);
@@ -194,12 +301,12 @@ export default class AMOLEDOverlayExtension extends Extension {
             GLib.PRIORITY_DEFAULT,
             msToNextMinute,
             () => {
-                this._updateClock();
+                this._updateUI();
                 const id2 = GLib.timeout_add_seconds(
                     GLib.PRIORITY_DEFAULT,
                     60,
                     () => {
-                        this._updateClock();
+                        this._updateUI();
                         return GLib.SOURCE_CONTINUE;
                     }
                 );
@@ -211,52 +318,112 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._timers.push(id1);
     }
 
+    // Time update
     _updateClock() {
-        if (!this._clock || !this._container) return;
+        if (!this._clock && !this._date) return;
 
         const now = new Date();
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        this._clock.text = `${hh}:${mm}`;
 
-        if (this._date) {
-            const dd = String(now.getDate()).padStart(2, '0');
-            const mmStr = String(now.getMonth() + 1).padStart(2, '0');
-            const yy = String(now.getFullYear()).slice(-2);
-
-            if (DATE_US_STYLE) {
-                this._date.text = `${mmStr}.${dd}.${yy}`;
-            } else {
-                this._date.text = `${dd}.${mmStr}.${yy}`;
-            }
+        if (this._clock) {
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            this._clock.text = `${hh}:${mm}`;
         }
 
-        this._positionContainerWithJitter();
+        if (this._date) {
+            this._date.text = this._dateFormatter.format(now);
+        }
+
+        this._positionContainer(this._container, "right");
+        this._positionContainer(this._leftContainer, "left");
+        this._avoidOverlap();
     }
 
-    _positionContainerWithJitter() {
-        if (!this._container || !this._overlay) return;
+    // Update all labels
+    _updateUI() {
+        this._updateClock();
+        this._updateBatteryLabel();
+    }
+
+    // Positioning
+    _computeJitteredX(baseX, containerWidth) {
+        if (!this._overlay) return baseX;
+
+        let jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
+        const minX = 0;
+        const maxX = Math.max(0, this._overlay.width - containerWidth);
+        return Math.min(maxX, Math.max(minX, baseX + jitterX));
+    }
+
+    _positionContainer(container, side) {
+        if (!container || !this._overlay) return;
         if (!this._overlay.get_parent?.()) return;
 
-        const jitterX = Math.floor((Math.random() * 2 - 1) * CLOCK_JITTERX);
-        const containerWidth = this._container.width;
+        const containerWidth = container.width;
+        const overlayWidth = this._overlay.width;
 
-        const baseContainerX = this._overlay.width - containerWidth - CLOCK_MARGIN_RIGHT;
-        const minXContainer = 0;
-        const maxXContainer = Math.max(0, this._overlay.width - containerWidth);
-        const containerX = Math.min(maxXContainer, Math.max(minXContainer, baseContainerX + jitterX));
-        const containerY = Math.floor(this._overlay.height / 2 - this._container.height / 2);
+        let baseX;
+        if (side === "right") {
+            baseX = Math.floor(overlayWidth * 0.75 - containerWidth / 2);
+        } else { 
+            baseX = Math.floor(overlayWidth * 0.25 - containerWidth / 2);
+        }
 
-        this._container.set_position(containerX, containerY);
+        const containerX = this._computeJitteredX(baseX, containerWidth);
+        const containerY = Math.floor(this._overlay.height / 2 - container.height / 2);
+        container.set_position(containerX, containerY);
     }
 
-    _showClock() {
-        this._updateClock();
+    _avoidOverlap() {
+        if (this._container && this._leftContainer) {
+            const rightX = this._container.x;
+            const leftX = this._leftContainer.x + this._leftContainer.width;
+            if (leftX > rightX) {
+                this._leftContainer.set_x(rightX - this._leftContainer.width);
+            }
+        }
+    }
+
+
+    _fadeIn() {
+        if (!this._overlay) return;
+        if (this._state === 'showing' || this._state === 'visible') return;
+
+        this._state = 'showing';
+        this._updateUI();
+
+        this._overlay.remove_all_transitions?.();
+        this._overlay.ease({
+            opacity: 255,
+            duration: FADE_TIME_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => {
+                if (this._state !== 'hidden') {
+                    this._state = 'visible';
+                    this._showContainers();
+                }
+            },
+        });
+    }
+
+    _hideOverlay() {
+        if (!this._overlay) return;
+        if (this._state === 'hidden') return;
+
+        this._overlay.remove_all_transitions?.();
+        this._overlay.opacity = INACTIVE_OPACITY;
+        this._hideContainers();
+        this._state = 'hidden';
+    }
+
+    _showContainers() {
         if (this._container) this._container.show();
+        if (this._leftContainer) this._leftContainer.show();
     }
 
-    _hideClock() {
+    _hideContainers() {
         if (this._container) this._container.hide();
+        if (this._leftContainer) this._leftContainer.hide();
     }
 
     // Interactions
@@ -267,36 +434,13 @@ export default class AMOLEDOverlayExtension extends Extension {
         const [ox, oy, ow, oh] = this._rectOf(this._overlay);
 
         if (x >= ox && x <= ox + ow && y >= oy && y <= oh) {
-            this._hideClock();
-            this._overlay.opacity = INACTIVE_OPACITY;
+            this._hideOverlay();
             this._resetIdleTimer();
         }
         return Clutter.EVENT_PROPAGATE;
     }
 
-    _fadeIn() {
-        if (!this._overlay) return;
-        this._overlay.remove_all_transitions?.();
-        this._overlay.ease({
-            opacity: 255,
-            duration: FADE_TIME_MS,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
-                const showId = GLib.timeout_add(
-                    GLib.PRIORITY_DEFAULT,
-                    500,
-                    () => {
-                        this._showClock();
-                        this._removeTimer(showId);
-                        return GLib.SOURCE_REMOVE;
-                    }
-                );
-                this._timers.push(showId);
-            },
-        });
-    }
-
-    // Positioning
+    // Reposition
     _tryInitialPosition() {
         return this._repositionOverlay();
     }
@@ -320,13 +464,16 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._overlay.set_position(x, y);
         this._overlay.set_size(w, h);
-        this._positionContainerWithJitter();
+
+        this._positionContainer(this._container, "right");
+        this._positionContainer(this._leftContainer, "left");
+        this._avoidOverlap();
         return true;
     }
 
     // Helpers
     _removeTimer(id) {
-        try { GLib.source_remove(id); } catch {}
+        GLib.source_remove(id);
         this._timers = this._timers.filter(x => x !== id);
     }
 }
