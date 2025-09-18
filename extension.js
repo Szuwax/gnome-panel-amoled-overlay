@@ -19,13 +19,11 @@ const B_JITTERX        = 100; // The maximum horizontal offset by which the cont
 
 const DATE_MARGIN      = 6; // Space between clock and date(px)
 const USER_MARGIN      = 6;//  Space between battery and username(px)
-const SAFE_MARGIN      = 20; //Minimal space between left and right containers(px).
 
 const SHOW_CLOCK       = true;
 const SHOW_DATE        = true;
 const SHOW_BATTERY     = true;
 const SHOW_USERNAME    = true;
-
 
 export default class AMOLEDOverlayExtension extends Extension {
     constructor(metadata) {
@@ -48,12 +46,9 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._idleTimeout = 0;
         this._initTries = INIT_RETRIES;
 
-        this._state = 'hidden'; // hidden,showing, visible
-        this._lastMotionTs = 0;
+        this._isVisible = false;
+        this._isAnimating = false;
 
-        this._jitterOffsets = { right: 0, left: 0 };
-
-        // Date format
         this._dateFormatter = new Intl.DateTimeFormat(undefined, {
             year: '2-digit',
             month: '2-digit',
@@ -171,9 +166,14 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     disable() {
+        if (this._idleTimeout) {
+            this._removeTimer(this._idleTimeout);
+            this._idleTimeout = 0;
+        }
+
         this._timers.forEach(id => { GLib.source_remove(id); });
         this._timers = [];
-        this._idleTimeout = 0;
+
         this._disconnectSignals();
 
         if (this._batteryDevice && this._batterySignal) {
@@ -203,7 +203,8 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._overlay = null;
         }
 
-        this._state = 'hidden';
+        this._isVisible = false;
+        this._isAnimating = false;
     }
 
     // Battery
@@ -226,7 +227,7 @@ export default class AMOLEDOverlayExtension extends Extension {
     }
 
     _updateBatteryLabel() {
-        if (this._batteryLabel && this._batteryDevice && SHOW_BATTERY) {
+        if (this._batteryLabel && this._batteryDevice) {
             const percent = Math.round(this._batteryDevice.percentage);
             const charging = this._batteryDevice.state === UPowerGlib.DeviceState.CHARGING;
             this._batteryLabel.text = `${charging ? "C" : ""}${percent}%`;
@@ -237,7 +238,12 @@ export default class AMOLEDOverlayExtension extends Extension {
     _connectSignals() {
         this._connect(global.stage, 'notify::allocation', () => this._tryInitialPosition());
         this._connect(Main.layoutManager, 'monitors-changed', () => this._tryInitialPosition());
-        this._connect(global.stage, 'motion-event', this._onMotion.bind(this));
+
+        // enter event
+        this._connect(Main.panel, 'enter-event', () => {
+            this._hideOverlay();
+            this._resetIdleTimer();
+        });
 
         if (Main.messageTray) {
             this._connect(Main.messageTray, 'notify', () => {
@@ -339,9 +345,6 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._date.text = this._dateFormatter.format(now);
         }
 
-        this._jitterOffsets.right = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
-        this._jitterOffsets.left = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
-
         this._positionContainer(this._container, "right");
         this._positionContainer(this._leftContainer, "left");
         this._avoidOverlap();
@@ -349,14 +352,16 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     // Update all labels
     _updateUI() {
+        if (!this._isVisible) return;
         this._updateClock();
         this._updateBatteryLabel();
     }
 
     // Positioning
-    _computeJitteredX(baseX, containerWidth, side) {
+    _computeJitteredX(baseX, containerWidth) {
         if (!this._overlay) return baseX;
-        let jitterX = this._jitterOffsets[side] || 0;
+
+        let jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
         const minX = 0;
         const maxX = Math.max(0, this._overlay.width - containerWidth);
         return Math.min(maxX, Math.max(minX, baseX + jitterX));
@@ -365,7 +370,6 @@ export default class AMOLEDOverlayExtension extends Extension {
     _positionContainer(container, side) {
         if (!container || !this._overlay) return;
         if (!this._overlay.get_parent?.()) return;
-        if (container.width === 0 || container.height === 0) return;
 
         const containerWidth = container.width;
         const overlayWidth = this._overlay.width;
@@ -377,7 +381,7 @@ export default class AMOLEDOverlayExtension extends Extension {
             baseX = Math.floor(overlayWidth * 0.25 - containerWidth / 2);
         }
 
-        const containerX = this._computeJitteredX(baseX, containerWidth, side);
+        const containerX = this._computeJitteredX(baseX, containerWidth);
         const containerY = Math.floor(this._overlay.height / 2 - container.height / 2);
         container.set_position(containerX, containerY);
     }
@@ -385,26 +389,18 @@ export default class AMOLEDOverlayExtension extends Extension {
     _avoidOverlap() {
         if (this._container && this._leftContainer) {
             const rightX = this._container.x;
-            const rightW = this._container.width;
-            const leftX = this._leftContainer.x;
-            const leftW = this._leftContainer.width;
-
-            const rightEdge = rightX;
-            const leftEdge = leftX + leftW;
-
-            if (leftEdge + SAFE_MARGIN > rightEdge) {
-                const newX = Math.max(0, rightEdge - leftW - SAFE_MARGIN);
-                this._leftContainer.set_x(newX);
+            const leftX = this._leftContainer.x + this._leftContainer.width;
+            if (leftX > rightX) {
+                this._leftContainer.set_x(rightX - this._leftContainer.width);
             }
         }
     }
 
     _fadeIn() {
         if (!this._overlay) return;
-        if (this._state === 'showing' || this._state === 'visible') return;
+        if (this._isAnimating || this._isVisible) return;
 
-        this._state = 'showing';
-        this._updateUI();
+        this._isAnimating = true;
 
         this._overlay.remove_all_transitions?.();
         this._overlay.ease({
@@ -412,22 +408,23 @@ export default class AMOLEDOverlayExtension extends Extension {
             duration: FADE_TIME_MS,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             onComplete: () => {
-                if (this._state !== 'hidden') {
-                    this._state = 'visible';
-                    this._showContainers();
-                }
+                this._isAnimating = false;
+                this._isVisible = true;
+                this._updateUI();
+                this._showContainers();
             },
         });
     }
 
     _hideOverlay() {
         if (!this._overlay) return;
-        if (this._state === 'hidden') return;
+        if (!this._isVisible && !this._isAnimating) return;
 
         this._overlay.remove_all_transitions?.();
         this._overlay.opacity = INACTIVE_OPACITY;
         this._hideContainers();
-        this._state = 'hidden';
+        this._isVisible = false;
+        this._isAnimating = false;
     }
 
     _showContainers() {
@@ -438,24 +435,6 @@ export default class AMOLEDOverlayExtension extends Extension {
     _hideContainers() {
         if (this._container) this._container.hide();
         if (this._leftContainer) this._leftContainer.hide();
-    }
-
-    // Interactions
-    _onMotion(_actor, event) {
-        if (!this._overlay) return Clutter.EVENT_PROPAGATE;
-
-        const now = Date.now();
-        if (now - this._lastMotionTs < 50) return Clutter.EVENT_PROPAGATE;
-        this._lastMotionTs = now;
-
-        const [x, y] = event.get_coords();
-        const [ox, oy, ow, oh] = this._rectOf(this._overlay);
-
-        if (x >= ox && x <= ox + ow && y >= oy && y <= oy + oh) {
-            this._hideOverlay();
-            this._resetIdleTimer();
-        }
-        return Clutter.EVENT_PROPAGATE;
     }
 
     // Reposition
