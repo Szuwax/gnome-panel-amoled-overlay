@@ -30,23 +30,29 @@ Configuration:
 
 You can edit constants directly in extension.js to customize behavior:
 ~~~
-INACTIVITY_MS    = 2000; //Delay with no mouse movement over the panel before the overlay appears(ms)
-FADE_TIME_MS     = 1000; // Duration of the overlay's fade-in animation(ms)
-INIT_DELAY_S     = 6;    // Initial delay before positioning the overlay(sec)
-UNLOCK_DELAY_S   = 6;    // Delay after unlocking the screen before repositioning the overlay(sec)
-INACTIVE_OPACITY = 0;    // Opacity of the transparent overlay (0–255). 0 = fully transparent
-INIT_RETRIES     = 3;    // Number of times to retry positioning the overlay if it fails
-OVERLAY_COLOR    = '#000000'; // Background color of the overlay. Use #000000 for pure black (AMOLED display).
+// Settings
+INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears (ms)
+FADE_TIME_MS     = 1000; // Duration of fade-in animation (ms)
+INIT_DELAY_S     = 8;   // Initial delay before positioning overlay (sec)
+UNLOCK_DELAY_S   = 8;   // Delay after unlocking before repositioning overlay (sec)
+INIT_RETRIES     = 3;    // Retry count for repositioning overlay
+INACTIVE_OPACITY = 0;    // Fully transparent overlay opacity
+OVERLAY_COLOR    = '#000000'; //Overlay background color (pure black for AMOLED)
 
-B_JITTERX        = 180;  // The maximum horizontal offset by which the container can randomly shift left or right from its base position(px).
+// Containers position
+LEFT_RATIO  = 0.25; // Left container base position
+RIGHT_RATIO = 0.75; // Right container base position
 
-DATE_MARGIN      = 6;    //Space between clock and date(px)
-USER_MARGIN      = 6;    // Space between battery and username(px)
+B_JITTERX   = 180;  // Max horizontal offset for jitter effect (px)
 
-SHOW_CLOCK       = true;
-SHOW_DATE        = true;
-SHOW_BATTERY     = true; //Battery info with charging status
-SHOW_USERNAME    = true;
+// Text spacing
+DATE_MARGIN = 6;    //Space between clock and date (px)
+USER_MARGIN = 6;    // Space between battery and username (px)
+
+SHOW_CLOCK    = true;
+SHOW_DATE     = true;
+SHOW_BATTERY  = true;  // Battery info with charging status
+SHOW_USERNAME = true;
 ~~~
 You can edit font color and font size in stylesheet.css
 
