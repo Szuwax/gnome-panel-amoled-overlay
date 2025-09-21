@@ -1,13 +1,27 @@
 .clock-label {
   font-family: "MatrixType Display", monospace;
   font-size: 18px;
-  color: #007a00;
+  color: #335514;
   font-weight: normal;
 }
 
 .date-label {
   font-family: "MatrixType Display", monospace;
-  font-size: 10px;
-  color: #006600;
+  font-size: 12px;
+  color: #335514;
+  font-weight: normal;
+}
+
+.battery-label {
+  font-family: "MatrixType Display", monospace;
+  font-size: 18px;
+  color: #335514;
+  font-weight: normal;
+}
+
+.user-label {
+  font-family: "MatrixType Display", monospace;
+  font-size: 12px;
+  color: #335514;
   font-weight: normal;
 }
