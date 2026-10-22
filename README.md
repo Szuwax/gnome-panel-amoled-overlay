@@ -53,6 +53,10 @@ SHOW_CLOCK    = true;
 SHOW_DATE     = true;
 SHOW_BATTERY  = true;  // Battery info with charging status
 SHOW_USERNAME = true;
+
+
+REQUIRE_BUILTIN_ONLY = true; // Disable when an external monitor is connected
+
 ~~~
 You can edit font color and font size in stylesheet.css
 
