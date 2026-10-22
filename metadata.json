@@ -3,5 +3,5 @@
   "name": "AMOLED overlay",
   "description": "A functional black overlay on the panel to prevent OLED burn-in. It displays a small digital clock that periodically shifts its position.",
   "version": 6,
-  "shell-version": ["48"]
+  "shell-version": ["50"]
 }
