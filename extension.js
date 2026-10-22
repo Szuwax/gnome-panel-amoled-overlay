@@ -12,32 +12,34 @@ import UPowerGlib from 'gi://UPowerGlib';
 const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears(ms)
 const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms)
 const INIT_DELAY_S     = 12;   // Initial delay before positioning overlay(sec)
-const UNLOCK_DELAY_S   = 7;   // Delay after unlocking before repositioning overlay(sec)
+const UNLOCK_DELAY_S   = 7;    // Delay after unlocking before repositioning overlay(sec)
 const INACTIVE_OPACITY = 0;    // Fully transparent overlay opacity
 const INIT_RETRIES     = 3;    // Retry count for repositioning overlay
-const OVERLAY_COLOR    = '#000000'; //  Overlay background color (pure black for AMOLED)
+const OVERLAY_COLOR    = '#000000'; // Overlay background color (pure black for AMOLED)
 
 // Containers position
 const LEFT_RATIO  = 0.25; // Left container position
 const RIGHT_RATIO = 0.75; // Right container position
 
-const B_JITTERX   = 180;  //Max horizontal offset for jump effect(px)
+const B_JITTERX   = 180;  // Max horizontal offset for jump effect(px)
 
 // Text spacing
-const DATE_MARGIN = 6;    //Space between clock and date(px)
-const USER_MARGIN = 6;    //Space between battery and username(px)
+const DATE_MARGIN = 6;    // Space between clock and date(px)
+const USER_MARGIN = 6;    // Space between battery and username(px)
 
 const SHOW_CLOCK    = true;
 const SHOW_DATE     = true;
 const SHOW_BATTERY  = true; // Battery info with charging status
 const SHOW_USERNAME = true;
 
-// Logs
-const DEBUG   = false;
-const S_LOGS  = false;
+const REQUIRE_BUILTIN_ONLY = true;
+
+const DEBUG = false;
+
+// Duration of the smooth position-change animation for the containers
+const POSITION_EASE_MS = 400;
 
 
-// Log helpers
 function debugLog(msg) {
     if (DEBUG)
         log(`[AMOLEDOverlay] ${msg}`);
@@ -45,11 +47,12 @@ function debugLog(msg) {
 
 function safe(fn, context = "") {
     try {
-        fn();
+        return fn();
     } catch (e) {
-        if (S_LOGS) {
+        if (DEBUG) {
             logError(e, `[AMOLEDOverlay] ${context}`);
         }
+        return undefined;
     }
 }
 
@@ -67,17 +70,23 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._upClient = null;
         this._batteryDevice = null;
-        this._batterySignals = [];
 
         this._signals = [];
-        this._idleTimeout = 0;
-        this._clockTickId = 0;
+
+        this._timeouts = {
+            idle: 0,
+            clockTick: 0,
+            initReposition: 0,
+            unlockReposition: 0,
+        };
         this._initTries = INIT_RETRIES;
 
         this._isVisible = false;
         this._isAnimating = false;
 
-        this._fadeInRetryId = 0;
+        this._active = false;
+        this._monitorCheckSignalId = 0;
+        this._positioned = false;
 
         this._dateFormatter = new Intl.DateTimeFormat(undefined, {
             year: '2-digit', //'numeric' for full year
@@ -88,6 +97,72 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     enable() {
         debugLog("enable()");
+        this._monitorCheckSignalId = Main.layoutManager.connect(
+            'monitors-changed',
+            () => safe(() => this._checkMonitorConfig(), "monitor config check")
+        );
+        this._checkMonitorConfig();
+    }
+
+    disable() {
+        debugLog("disable()");
+        if (this._monitorCheckSignalId) {
+            Main.layoutManager.disconnect(this._monitorCheckSignalId);
+            this._monitorCheckSignalId = 0;
+        }
+        this._deactivate();
+    }
+
+    _checkMonitorConfig() {
+        const supported = this._isBuiltinOnlyConfig();
+        debugLog(`monitor config check: builtin-only=${supported}`);
+        if (supported && !this._active) {
+            this._activate();
+        } else if (!supported && this._active) {
+            this._deactivate();
+        }
+    }
+
+    _isBuiltinOnlyConfig() {
+        if (!REQUIRE_BUILTIN_ONLY)
+            return true;
+        try {
+            const monitors = global.backend.get_monitor_manager().get_monitors();
+            if (!monitors || monitors.length === 0)
+                return false;
+            return monitors.every(m => m.is_builtin());
+        } catch (e) {
+            debugLog(`monitor detection failed, assuming supported (${e.message})`);
+            return true;
+        }
+    }
+
+    _safeConnect(obj, sig, cb, ctx = "") {
+        const id = obj.connect(sig, (...args) => {
+            safe(() => cb(...args), ctx);
+        });
+        this._signals.push([obj, id]);
+        return id;
+    }
+
+    _clearTimeout(key) {
+        if (this._timeouts[key]) {
+            GLib.source_remove(this._timeouts[key]);
+            this._timeouts[key] = 0;
+        }
+    }
+
+    _clearAllTimeouts() {
+        Object.keys(this._timeouts).forEach(key => this._clearTimeout(key));
+    }
+
+    _activate() {
+        if (this._active) return;
+        debugLog("activate()");
+        this._active = true;
+        this._initTries = INIT_RETRIES;
+        this._positioned = false;
+
         this._overlay = new St.Widget({
             style: `background-color: ${OVERLAY_COLOR};`,
             reactive: false,
@@ -98,8 +173,6 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (SHOW_CLOCK || SHOW_DATE) {
             this._container = new St.BoxLayout({
                 style_class: 'amajac-clock-container',
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.CENTER,
                 vertical: false,
                 visible: false,
             });
@@ -124,8 +197,6 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (SHOW_BATTERY || SHOW_USERNAME) {
             this._leftContainer = new St.BoxLayout({
                 style_class: 'amajac-info-container',
-                x_align: Clutter.ActorAlign.START,
-                y_align: Clutter.ActorAlign.CENTER,
                 vertical: false,
                 visible: false,
             });
@@ -139,7 +210,6 @@ export default class AMOLEDOverlayExtension extends Extension {
             if (SHOW_USERNAME) {
                 const username = GLib.get_user_name();
                 this._userLabel = this._makeLabel(username, 'user-label');
-                this._userLabel.y_align = Clutter.ActorAlign.CENTER;
                 if (SHOW_BATTERY) {
                     this._userLabel.set_style(`margin-left: ${USER_MARGIN}px;`);
                 }
@@ -149,69 +219,62 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._overlay.add_child(this._leftContainer);
         }
 
-        Main.layoutManager.addTopChrome(this._overlay, {
-            affectsInputRegion: false,
-            trackFullscreen: true,
-        });
+        try {
+            Main.layoutManager.addTopChrome(this._overlay, {
+                affectsInputRegion: false,
+                trackFullscreen: true,
+            });
+        } catch (e) {
+            debugLog(`addTopChrome: affectsInputRegion unsupported, retrying without it (${e.message})`);
+            Main.layoutManager.addTopChrome(this._overlay, {
+                trackFullscreen: true,
+            });
+        }
 
         this._armClockTick();
         this._connectSignals();
         this._initialTextUpdate();
 
         // First overlay repositioning/retry
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_S, () => {
+        this._timeouts.initReposition = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_S, () => {
             return safe(() => {
                 debugLog("initial reposition attempt");
                 const ok = this._repositionOverlay();
                 if (ok) {
                     this._initialTextUpdate();
                     this._resetIdleTimer();
+                    this._timeouts.initReposition = 0;
                     return GLib.SOURCE_REMOVE;
                 }
                 if (--this._initTries > 0) {
                     return GLib.SOURCE_CONTINUE;
                 }
+                this._timeouts.initReposition = 0;
                 return GLib.SOURCE_REMOVE;
             }, "reposition failed");
         });
     }
 
-    disable() {
-        debugLog("disable()");
-        if (this._idleTimeout) {
-            GLib.source_remove(this._idleTimeout);
-            this._idleTimeout = 0;
-        }
-        if (this._clockTickId) {
-            GLib.source_remove(this._clockTickId);
-            this._clockTickId = 0;
-        }
-        if (this._fadeInRetryId) {
-            GLib.source_remove(this._fadeInRetryId);
-            this._fadeInRetryId = 0;
-        }
+    _deactivate() {
+        if (!this._active && !this._overlay) return;
+        debugLog("deactivate()");
+        this._active = false;
+
+        this._clearAllTimeouts();
         this._disconnectSignals();
-        if (this._batteryDevice && this._batterySignals.length > 0) {
-            this._batterySignals.forEach(id => this._batteryDevice.disconnect(id));
-            this._batterySignals = [];
-        }
         this._batteryDevice = null;
         if (this._upClient) {
             this._upClient.run_dispose?.();
             this._upClient = null;
         }
-        if (this._container) {
-            this._container.destroy();
-            this._container = null;
-            this._clock = null;
-            this._date = null;
-        }
-        if (this._leftContainer) {
-            this._leftContainer.destroy();
-            this._leftContainer = null;
-            this._batteryLabel = null;
-            this._userLabel = null;
-        }
+
+        this._container = null;
+        this._clock = null;
+        this._date = null;
+        this._leftContainer = null;
+        this._batteryLabel = null;
+        this._userLabel = null;
+
         if (this._overlay) {
             Main.layoutManager.removeChrome(this._overlay);
             this._overlay.destroy();
@@ -219,6 +282,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         }
         this._isVisible = false;
         this._isAnimating = false;
+        this._positioned = false;
     }
 
     _makeLabel(text, styleClass = 'clock-label') {
@@ -237,16 +301,10 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._batteryDevice = devices.find(d => d.kind === UPowerGlib.DeviceKind.BATTERY);
 
             if (this._batteryDevice) {
-                this._batterySignals.push(
-                    this._batteryDevice.connect('notify::percentage', () =>
-                        safe(() => this._updateBatteryLabel(), "battery update error")
-                    )
-                );
-                this._batterySignals.push(
-                    this._batteryDevice.connect('notify::state', () =>
-                        safe(() => this._updateBatteryLabel(), "battery state update error")
-                    )
-                );
+                this._safeConnect(this._batteryDevice, 'notify::percentage',
+                    () => this._updateBatteryLabel(), "battery update error");
+                this._safeConnect(this._batteryDevice, 'notify::state',
+                    () => this._updateBatteryLabel(), "battery state update error");
                 this._updateBatteryLabel();
             }
         }, "battery init error");
@@ -274,30 +332,25 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     // Signals
     _connectSignals() {
-        const safeConnect = (obj, sig, cb, ctx = "") => {
-            const id = obj.connect(sig, (...args) => {
-                safe(() => cb(...args), ctx);
-            });
-            this._signals.push([obj, id]);
-        };
-
-        safeConnect(global.stage, 'notify::allocation', () => this._repositionOverlay(), "stage allocation");
-        safeConnect(Main.layoutManager, 'monitors-changed', () => this._repositionOverlay(), "monitors changed");
-        safeConnect(Main.panel, 'enter-event', () => {
+        this._safeConnect(global.stage, 'notify::allocation', () => this._repositionOverlay(), "stage allocation");
+        this._safeConnect(Main.layoutManager, 'monitors-changed', () => this._repositionOverlay(), "monitors changed");
+        this._safeConnect(Main.panel, 'enter-event', () => {
             this._hideOverlay();
             this._resetIdleTimer();
         }, "panel enter");
         if (Main.messageTray) {
-            safeConnect(Main.messageTray, 'notify', () => {
+            this._safeConnect(Main.messageTray, 'notify', () => {
                 this._hideOverlay();
                 this._resetIdleTimer();
             }, "messageTray notify");
         }
         if (Main.screenShield) {
-            safeConnect(Main.screenShield, 'hidden', () => {
-                GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_S, () => {
+            this._safeConnect(Main.screenShield, 'hidden', () => {
+                this._clearTimeout('unlockReposition');
+                this._timeouts.unlockReposition = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_S, () => {
                     return safe(() => {
                         this._repositionOverlay();
+                        this._timeouts.unlockReposition = 0;
                         return GLib.SOURCE_REMOVE;
                     }, "unlock reposition error");
                 });
@@ -314,36 +367,31 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     // Idle timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
-        if (this._idleTimeout) {
-            GLib.source_remove(this._idleTimeout);
-            this._idleTimeout = 0;
-        }
-        const callback = () => {
+        this._clearTimeout('idle');
+        this._timeouts.idle = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
             safe(() => {
                 this._fadeIn();
             }, "idle timer error");
-            this._idleTimeout = 0;
+            this._timeouts.idle = 0;
             return GLib.SOURCE_REMOVE;
-        };
-        this._idleTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, callback);
+        });
     }
 
     // Time scheduling
     _armClockTick() {
         const now = Date.now();
         const msToNextMinute = 60000 - (now % 60000);
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, msToNextMinute, () => {
-            safe(() => {
-                this._updateClock();
-                this._clockTickId = GLib.timeout_add_seconds(
-                    GLib.PRIORITY_DEFAULT,
-                    60,
-                    () => {
-                        safe(() => this._updateClock(), "clock tick error");
-                        return GLib.SOURCE_CONTINUE;
-                    }
-                );
-            }, "first tick error");
+        this._timeouts.clockTick = GLib.timeout_add(GLib.PRIORITY_DEFAULT, msToNextMinute, () => {
+            this._timeouts.clockTick = 0;
+            safe(() => this._updateClock(), "first tick error");
+            this._timeouts.clockTick = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT,
+                60,
+                () => {
+                    safe(() => this._updateClock(), "clock tick error");
+                    return GLib.SOURCE_CONTINUE;
+                }
+            );
             return GLib.SOURCE_REMOVE;
         });
     }
@@ -360,32 +408,38 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (this._date) {
             this._date.text = this._dateFormatter.format(now);
         }
-        this._positionContainer(this._container, "right");
-        this._positionContainer(this._leftContainer, "left");
+        this._positionContainer(this._container, RIGHT_RATIO);
+        this._positionContainer(this._leftContainer, LEFT_RATIO);
         this._avoidOverlap();
     }
 
     // Container positioning
     _computeJitteredX(baseX, containerWidth) {
-        let jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
+        const jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
         const minX = 0;
         const maxX = Math.max(0, this._overlay.width - containerWidth);
         return Math.min(maxX, Math.max(minX, baseX + jitterX));
     }
 
-    _positionContainer(container, side) {
+    // ratio: container center position as a fraction of overlay width
+    // (RIGHT_RATIO for the clock, LEFT_RATIO for battery/username)
+    _positionContainer(container, ratio) {
         if (!container || !this._overlay?.get_parent?.()) return;
-        const containerWidth = container.width;
-        const overlayWidth = this._overlay.width;
-        let baseX;
-        if (side === "right") {
-            baseX = Math.floor(overlayWidth * RIGHT_RATIO - containerWidth / 2);
-        } else {
-            baseX = Math.floor(overlayWidth * LEFT_RATIO - containerWidth / 2);
-        }
-        const containerX = this._computeJitteredX(baseX, containerWidth);
+        const baseX = Math.floor(this._overlay.width * ratio - container.width / 2);
+        const containerX = this._computeJitteredX(baseX, container.width);
         const containerY = Math.floor(this._overlay.height / 2 - container.height / 2);
-        container.set_position(containerX, containerY);
+
+        if (this._isVisible) {
+            container.remove_all_transitions?.();
+            container.ease({
+                x: containerX,
+                y: containerY,
+                duration: POSITION_EASE_MS,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        } else {
+            container.set_position(containerX, containerY);
+        }
     }
 
     // Prevent overlapping
@@ -394,15 +448,15 @@ export default class AMOLEDOverlayExtension extends Extension {
             const rightX = this._container.x;
             const leftX = this._leftContainer.x + this._leftContainer.width;
             if (leftX > rightX) {
-                this._positionContainer(this._container, "right");
-                this._positionContainer(this._leftContainer, "left");
+                this._positionContainer(this._container, RIGHT_RATIO);
+                this._positionContainer(this._leftContainer, LEFT_RATIO);
             }
         }
     }
 
     // Animation
     _fadeIn() {
-        if (!this._overlay) return;
+        if (!this._overlay || !this._positioned) return;
         if (this._isAnimating || this._isVisible) return;
 
         debugLog("fadeIn start");
@@ -461,9 +515,10 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._overlay.set_position(x, y);
         this._overlay.set_size(w, h);
-        this._positionContainer(this._container, "right");
-        this._positionContainer(this._leftContainer, "left");
+        this._positionContainer(this._container, RIGHT_RATIO);
+        this._positionContainer(this._leftContainer, LEFT_RATIO);
         this._avoidOverlap();
+        this._positioned = true;
         debugLog(`reposition overlay ${w}x${h} at ${x},${y}`);
         return true;
     }
