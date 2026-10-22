@@ -1,4 +1,4 @@
-# AMOLED Overlay Extension (WIP)
+# AMOLED Overlay Extension - Gnome 50 (WIP)
 
 Hiding the panel on an AMOLED screen felt annoying. For me it was more convenient to keep the panel always visible with a small height and simply make it turn fully black when not in use.  
 That’s why this extension was created.
@@ -76,8 +76,7 @@ mkdir -p ~/.local/share/gnome-shell/extensions/amoled-overlay@Szu
 
 
 ##
-This extension is a personal project I made for my own use, so I don't plan to publish (but who knows) it on the GNOME Extensions site. It works well for my setup, so I probably won't be actively maintaining it or fixing bugs, but I do expect to make gradual improvements over time.
+This extension is a personal project I made for my own use. It works well for my setup, so I probably won't be actively maintaining it or fixing bugs, but I do expect to make gradual improvements over time.
 
 I originally had no plans to upload this, but maybe it will be useful to someone else.
-Tested under Gnome 48
 
