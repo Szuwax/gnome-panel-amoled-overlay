@@ -1,18 +1,15 @@
-'use strict';
-
 import St from 'gi://St';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
+import UPowerGlib from 'gi://UPowerGlib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import UPowerGlib from 'gi://UPowerGlib';
 
 
 // Settings
 const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears(ms)
 const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms)
-const INIT_DELAY_S     = 12;   // Initial delay before positioning overlay(sec)
-const UNLOCK_DELAY_S   = 7;    // Delay after unlocking before repositioning overlay(sec)
+const INIT_DELAY_S     = 12;   //Initial delay before positioning overlay(sec)
 const INACTIVE_OPACITY = 0;    // Fully transparent overlay opacity
 const INIT_RETRIES     = 3;    // Retry count for repositioning overlay
 const OVERLAY_COLOR    = '#000000'; // Overlay background color (pure black for AMOLED)
@@ -22,6 +19,7 @@ const LEFT_RATIO  = 0.25; // Left container position
 const RIGHT_RATIO = 0.75; // Right container position
 
 const B_JITTERX   = 180;  // Max horizontal offset for jump effect(px)
+const MIN_GAP     = 12;   // Min space kept between left and right container(px)
 
 // Text spacing
 const DATE_MARGIN = 6;    // Space between clock and date(px)
@@ -39,19 +37,23 @@ const DEBUG = false;
 // Duration of the smooth position-change animation for the containers
 const POSITION_EASE_MS = 400;
 
+// Style classes (stylesheet.css)
+const CLASS_CLOCK   = 'amoled-overlay-clock';
+const CLASS_DATE    = 'amoled-overlay-date';
+const CLASS_BATTERY = 'amoled-overlay-battery';
+const CLASS_USER    = 'amoled-overlay-user';
+
 
 function debugLog(msg) {
     if (DEBUG)
-        log(`[AMOLEDOverlay] ${msg}`);
+        console.log(`[AMOLEDOverlay] ${msg}`);
 }
 
-function safe(fn, context = "") {
+function safe(fn, context = '') {
     try {
         return fn();
     } catch (e) {
-        if (DEBUG) {
-            logError(e, `[AMOLEDOverlay] ${context}`);
-        }
+        console.error(`[AMOLEDOverlay] ${context}:`, e);
         return undefined;
     }
 }
@@ -70,6 +72,8 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._upClient = null;
         this._batteryDevice = null;
+        this._dateFormatter = null;
+        this._motionController = null;
 
         this._signals = [];
 
@@ -77,7 +81,6 @@ export default class AMOLEDOverlayExtension extends Extension {
             idle: 0,
             clockTick: 0,
             initReposition: 0,
-            unlockReposition: 0,
         };
         this._initTries = INIT_RETRIES;
 
@@ -87,25 +90,19 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._active = false;
         this._monitorCheckSignalId = 0;
         this._positioned = false;
-
-        this._dateFormatter = new Intl.DateTimeFormat(undefined, {
-            year: '2-digit', //'numeric' for full year
-            month: '2-digit',
-            day: '2-digit'
-        });
     }
 
     enable() {
-        debugLog("enable()");
+        debugLog('enable()');
         this._monitorCheckSignalId = Main.layoutManager.connect(
             'monitors-changed',
-            () => safe(() => this._checkMonitorConfig(), "monitor config check")
+            () => safe(() => this._checkMonitorConfig(), 'monitor config check')
         );
         this._checkMonitorConfig();
     }
 
     disable() {
-        debugLog("disable()");
+        debugLog('disable()');
         if (this._monitorCheckSignalId) {
             Main.layoutManager.disconnect(this._monitorCheckSignalId);
             this._monitorCheckSignalId = 0;
@@ -117,7 +114,12 @@ export default class AMOLEDOverlayExtension extends Extension {
         const supported = this._isBuiltinOnlyConfig();
         debugLog(`monitor config check: builtin-only=${supported}`);
         if (supported && !this._active) {
-            this._activate();
+            try {
+                this._activate();
+            } catch (e) {
+                safe(() => this._deactivate(), 'cleanup after failed activate');
+                throw e;
+            }
         } else if (!supported && this._active) {
             this._deactivate();
         }
@@ -137,7 +139,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         }
     }
 
-    _safeConnect(obj, sig, cb, ctx = "") {
+    _safeConnect(obj, sig, cb, ctx = '') {
         const id = obj.connect(sig, (...args) => {
             safe(() => cb(...args), ctx);
         });
@@ -158,10 +160,16 @@ export default class AMOLEDOverlayExtension extends Extension {
 
     _activate() {
         if (this._active) return;
-        debugLog("activate()");
+        debugLog('activate()');
         this._active = true;
         this._initTries = INIT_RETRIES;
         this._positioned = false;
+
+        this._dateFormatter = new Intl.DateTimeFormat(undefined, {
+            year: '2-digit', // 'numeric' for full year
+            month: '2-digit',
+            day: '2-digit',
+        });
 
         this._overlay = new St.Widget({
             style: `background-color: ${OVERLAY_COLOR};`,
@@ -171,22 +179,17 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         // Right container - time/date
         if (SHOW_CLOCK || SHOW_DATE) {
-            this._container = new St.BoxLayout({
-                style_class: 'amajac-clock-container',
-                vertical: false,
-                visible: false,
-            });
+            this._container = new St.BoxLayout({ visible: false });
 
             if (SHOW_CLOCK) {
-                this._clock = this._makeLabel('', 'clock-label');
+                this._clock = this._makeLabel('', CLASS_CLOCK);
                 this._container.add_child(this._clock);
             }
 
             if (SHOW_DATE) {
-                this._date = this._makeLabel('', 'date-label');
-                if (SHOW_CLOCK) {
+                this._date = this._makeLabel('', CLASS_DATE);
+                if (SHOW_CLOCK)
                     this._date.set_style(`margin-left: ${DATE_MARGIN}px;`);
-                }
                 this._container.add_child(this._date);
             }
 
@@ -195,24 +198,18 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         // Left container - battery/username
         if (SHOW_BATTERY || SHOW_USERNAME) {
-            this._leftContainer = new St.BoxLayout({
-                style_class: 'amajac-info-container',
-                vertical: false,
-                visible: false,
-            });
+            this._leftContainer = new St.BoxLayout({ visible: false });
 
             if (SHOW_BATTERY) {
-                this._batteryLabel = this._makeLabel('', 'battery-label');
+                this._batteryLabel = this._makeLabel('', CLASS_BATTERY);
                 this._leftContainer.add_child(this._batteryLabel);
                 this._initBattery();
             }
 
             if (SHOW_USERNAME) {
-                const username = GLib.get_user_name();
-                this._userLabel = this._makeLabel(username, 'user-label');
-                if (SHOW_BATTERY) {
+                this._userLabel = this._makeLabel(GLib.get_user_name(), CLASS_USER);
+                if (SHOW_BATTERY)
                     this._userLabel.set_style(`margin-left: ${USER_MARGIN}px;`);
-                }
                 this._leftContainer.add_child(this._userLabel);
             }
 
@@ -225,7 +222,7 @@ export default class AMOLEDOverlayExtension extends Extension {
                 trackFullscreen: true,
             });
         } catch (e) {
-            debugLog(`addTopChrome: affectsInputRegion unsupported, retrying without it (${e.message})`);
+            debugLog(`addTopChrome: retrying without affectsInputRegion (${e.message})`);
             Main.layoutManager.addTopChrome(this._overlay, {
                 trackFullscreen: true,
             });
@@ -233,40 +230,32 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._armClockTick();
         this._connectSignals();
-        this._initialTextUpdate();
+        this._updateTexts();
 
         // First overlay repositioning/retry
         this._timeouts.initReposition = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, INIT_DELAY_S, () => {
-            return safe(() => {
-                debugLog("initial reposition attempt");
-                const ok = this._repositionOverlay();
-                if (ok) {
-                    this._initialTextUpdate();
-                    this._resetIdleTimer();
-                    this._timeouts.initReposition = 0;
-                    return GLib.SOURCE_REMOVE;
-                }
-                if (--this._initTries > 0) {
-                    return GLib.SOURCE_CONTINUE;
-                }
-                this._timeouts.initReposition = 0;
-                return GLib.SOURCE_REMOVE;
-            }, "reposition failed");
+            debugLog('initial reposition attempt');
+            const ok = safe(() => this._repositionOverlay(), 'initial reposition');
+            if (ok) {
+                this._resetIdleTimer();
+            } else if (--this._initTries > 0) {
+                return GLib.SOURCE_CONTINUE;
+            }
+            this._timeouts.initReposition = 0;
+            return GLib.SOURCE_REMOVE;
         });
     }
 
     _deactivate() {
         if (!this._active && !this._overlay) return;
-        debugLog("deactivate()");
+        debugLog('deactivate()');
         this._active = false;
 
         this._clearAllTimeouts();
         this._disconnectSignals();
         this._batteryDevice = null;
-        if (this._upClient) {
-            this._upClient.run_dispose?.();
-            this._upClient = null;
-        }
+        this._upClient = null;
+        this._dateFormatter = null;
 
         this._container = null;
         this._clock = null;
@@ -275,17 +264,19 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._batteryLabel = null;
         this._userLabel = null;
 
+        this._isVisible = false;
+        this._isAnimating = false;
+        this._positioned = false;
+
         if (this._overlay) {
+            this._overlay.remove_all_transitions();
             Main.layoutManager.removeChrome(this._overlay);
             this._overlay.destroy();
             this._overlay = null;
         }
-        this._isVisible = false;
-        this._isAnimating = false;
-        this._positioned = false;
     }
 
-    _makeLabel(text, styleClass = 'clock-label') {
+    _makeLabel(text, styleClass) {
         return new St.Label({
             text,
             style_class: styleClass,
@@ -298,20 +289,20 @@ export default class AMOLEDOverlayExtension extends Extension {
         safe(() => {
             this._upClient = UPowerGlib.Client.new();
             const devices = this._upClient.get_devices();
-            this._batteryDevice = devices.find(d => d.kind === UPowerGlib.DeviceKind.BATTERY);
+            this._batteryDevice = devices.find(d =>
+                d.kind === UPowerGlib.DeviceKind.BATTERY && d.power_supply) ?? null;
 
             if (this._batteryDevice) {
                 this._safeConnect(this._batteryDevice, 'notify::percentage',
-                    () => this._updateBatteryLabel(), "battery update error");
+                    () => this._updateBatteryLabel(), 'battery update error');
                 this._safeConnect(this._batteryDevice, 'notify::state',
-                    () => this._updateBatteryLabel(), "battery state update error");
+                    () => this._updateBatteryLabel(), 'battery state update error');
                 this._updateBatteryLabel();
             }
-        }, "battery init error");
+        }, 'battery init error');
 
-        if (!this._batteryDevice && this._batteryLabel) {
-            this._batteryLabel.text = "??%";
-        }
+        if (!this._batteryDevice && this._batteryLabel)
+            this._batteryLabel.text = '??%';
     }
 
     // Battery label update
@@ -319,139 +310,166 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (this._batteryLabel && this._batteryDevice) {
             const percent = Math.round(this._batteryDevice.percentage);
             const charging = this._batteryDevice.state === UPowerGlib.DeviceState.CHARGING;
-            this._batteryLabel.text = `${charging ? "C" : ""}${percent}%`;
+            this._batteryLabel.text = `${charging ? 'C' : ''}${percent}%`;
             debugLog(`battery ${this._batteryLabel.text}`);
         }
     }
 
-    // Initial content update
-    _initialTextUpdate() {
-        this._updateClock();
-        this._updateBatteryLabel();
-    }
-
     // Signals
     _connectSignals() {
-        this._safeConnect(global.stage, 'notify::allocation', () => this._repositionOverlay(), "stage allocation");
-        this._safeConnect(Main.layoutManager, 'monitors-changed', () => this._repositionOverlay(), "monitors changed");
-        this._safeConnect(Main.panel, 'enter-event', () => {
+        this._safeConnect(global.stage, 'notify::allocation', () => this._repositionOverlay(), 'stage allocation');
+        this._safeConnect(Main.layoutManager, 'monitors-changed', () => this._repositionOverlay(), 'monitors changed');
+        const onPanelEnter = () => {
             this._hideOverlay();
             this._resetIdleTimer();
-        }, "panel enter");
+        };
+        const onPanelLeave = () => this._resetIdleTimer();
+        if (Clutter.MotionController) {
+            this._motionController = new Clutter.MotionController();
+            this._safeConnect(this._motionController, 'enter', onPanelEnter, 'panel enter');
+            safe(() => this._safeConnect(this._motionController, 'leave', onPanelLeave, 'panel leave'),
+                'connect panel leave');
+            Main.panel.add_action(this._motionController);
+        } else {
+            this._safeConnect(Main.panel, 'enter-event', onPanelEnter, 'panel enter');
+            this._safeConnect(Main.panel, 'leave-event', onPanelLeave, 'panel leave');
+        }
+
         if (Main.messageTray) {
-            this._safeConnect(Main.messageTray, 'notify', () => {
+            const onNotification = () => {
                 this._hideOverlay();
                 this._resetIdleTimer();
-            }, "messageTray notify");
-        }
-        if (Main.screenShield) {
-            this._safeConnect(Main.screenShield, 'hidden', () => {
-                this._clearTimeout('unlockReposition');
-                this._timeouts.unlockReposition = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UNLOCK_DELAY_S, () => {
-                    return safe(() => {
-                        this._repositionOverlay();
-                        this._timeouts.unlockReposition = 0;
-                        return GLib.SOURCE_REMOVE;
-                    }, "unlock reposition error");
-                });
-            }, "screenShield hidden");
+            };
+            try {
+                this._safeConnect(Main.messageTray, 'queue-changed', onNotification, 'messageTray queue-changed');
+            } catch (e) {
+                debugLog(`queue-changed unavailable, falling back to notify (${e.message})`);
+                this._safeConnect(Main.messageTray, 'notify', onNotification, 'messageTray notify');
+            }
         }
     }
 
     _disconnectSignals() {
         this._signals.forEach(([obj, id]) => {
-            safe(() => obj.disconnect(id), "disconnect error");
+            safe(() => obj.disconnect(id), 'disconnect error');
         });
         this._signals = [];
+
+        if (this._motionController) {
+            const controller = this._motionController;
+            safe(() => controller.get_actor()?.remove_action(controller), 'remove motion controller');
+            this._motionController = null;
+        }
+    }
+
+    // True while the pointer is on the panel or one of its menus is open
+    _panelInUse() {
+        if (Main.panel.menuManager?.activeMenu)
+            return true;
+        if (!this._overlay) return false;
+        const [px, py] = global.get_pointer();
+        const { x, y, width, height } = this._overlay;
+        return px >= x && px < x + width && py >= y && py < y + height;
     }
 
     // Idle timer
     _resetIdleTimer(delay = INACTIVITY_MS) {
         this._clearTimeout('idle');
         this._timeouts.idle = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
-            safe(() => {
-                this._fadeIn();
-            }, "idle timer error");
             this._timeouts.idle = 0;
+            safe(() => {
+                if (this._panelInUse()) {
+                    debugLog(`idle: panel in use (menu=${!!Main.panel.menuManager?.activeMenu}, pointer=${global.get_pointer().slice(0, 2)}), waiting`);
+                    this._resetIdleTimer();
+                } else {
+                    debugLog(`idle: fading in (positioned=${this._positioned})`);
+                    this._fadeIn();
+                }
+            }, 'idle timer error');
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    // Time scheduling
+    // Schedule the next clock update on the minute boundary
     _armClockTick() {
-        const now = Date.now();
-        const msToNextMinute = 60000 - (now % 60000);
+        this._clearTimeout('clockTick');
+        const msToNextMinute = 60000 - (Date.now() % 60000) + 20;
         this._timeouts.clockTick = GLib.timeout_add(GLib.PRIORITY_DEFAULT, msToNextMinute, () => {
             this._timeouts.clockTick = 0;
-            safe(() => this._updateClock(), "first tick error");
-            this._timeouts.clockTick = GLib.timeout_add_seconds(
-                GLib.PRIORITY_DEFAULT,
-                60,
-                () => {
-                    safe(() => this._updateClock(), "clock tick error");
-                    return GLib.SOURCE_CONTINUE;
-                }
-            );
+            safe(() => this._updateClock(), 'clock tick error');
+            this._armClockTick();
             return GLib.SOURCE_REMOVE;
         });
     }
 
-    // Update time / reposition containers
-    _updateClock() {
-        if (!this._clock && !this._date) return;
+    // Refresh all texts without moving anything
+    _updateTexts() {
         const now = new Date();
         if (this._clock) {
             const hh = String(now.getHours()).padStart(2, '0');
             const mm = String(now.getMinutes()).padStart(2, '0');
             this._clock.text = `${hh}:${mm}`;
         }
-        if (this._date) {
+        if (this._date && this._dateFormatter)
             this._date.text = this._dateFormatter.format(now);
-        }
-        this._positionContainer(this._container, RIGHT_RATIO);
-        this._positionContainer(this._leftContainer, LEFT_RATIO);
-        this._avoidOverlap();
+        this._updateBatteryLabel();
+    }
+
+    // Minute tick: update time and jump to a new position
+    _updateClock() {
+        this._updateTexts();
+        this._layoutContainers(this._isVisible);
     }
 
     // Container positioning
-    _computeJitteredX(baseX, containerWidth) {
-        const jitterX = Math.floor((Math.random() * 2 - 1) * B_JITTERX);
-        const minX = 0;
-        const maxX = Math.max(0, this._overlay.width - containerWidth);
-        return Math.min(maxX, Math.max(minX, baseX + jitterX));
+    _naturalSize(container) {
+        const [, width] = container.get_preferred_width(-1);
+        const [, height] = container.get_preferred_height(-1);
+        return [width, height];
     }
 
     // ratio: container center position as a fraction of overlay width
-    // (RIGHT_RATIO for the clock, LEFT_RATIO for battery/username)
-    _positionContainer(container, ratio) {
-        if (!container || !this._overlay?.get_parent?.()) return;
-        const baseX = Math.floor(this._overlay.width * ratio - container.width / 2);
-        const containerX = this._computeJitteredX(baseX, container.width);
-        const containerY = Math.floor(this._overlay.height / 2 - container.height / 2);
+    _computeX(ratio, width, jitter) {
+        const offset = jitter ? Math.floor((Math.random() * 2 - 1) * B_JITTERX) : 0;
+        const baseX = Math.floor(this._overlay.width * ratio - width / 2);
+        const maxX = Math.max(0, this._overlay.width - width);
+        return Math.min(maxX, Math.max(0, baseX + offset));
+    }
 
-        if (this._isVisible) {
-            container.remove_all_transitions?.();
+    _placeContainer(container, x, height, animate) {
+        const y = Math.floor(this._overlay.height / 2 - height / 2);
+        container.remove_all_transitions();
+        if (animate) {
             container.ease({
-                x: containerX,
-                y: containerY,
+                x,
+                y,
                 duration: POSITION_EASE_MS,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
         } else {
-            container.set_position(containerX, containerY);
+            container.set_position(x, y);
         }
     }
 
-    // Prevent overlapping
-    _avoidOverlap() {
-        if (this._container && this._leftContainer) {
-            const rightX = this._container.x;
-            const leftX = this._leftContainer.x + this._leftContainer.width;
-            if (leftX > rightX) {
-                this._positionContainer(this._container, RIGHT_RATIO);
-                this._positionContainer(this._leftContainer, LEFT_RATIO);
-            }
+    // Pick new jittered positions for both containers
+    _layoutContainers(animate = false) {
+        if (!this._overlay?.get_parent() || this._overlay.width <= 0) return;
+
+        const left = this._leftContainer;
+        const right = this._container;
+        const [leftW, leftH] = left ? this._naturalSize(left) : [0, 0];
+        const [rightW, rightH] = right ? this._naturalSize(right) : [0, 0];
+
+        let leftX = left ? this._computeX(LEFT_RATIO, leftW, true) : 0;
+        let rightX = right ? this._computeX(RIGHT_RATIO, rightW, true) : 0;
+
+        if (left && right && leftX + leftW + MIN_GAP > rightX) {
+            leftX = this._computeX(LEFT_RATIO, leftW, false);
+            rightX = this._computeX(RIGHT_RATIO, rightW, false);
         }
+
+        if (left) this._placeContainer(left, leftX, leftH, animate);
+        if (right) this._placeContainer(right, rightX, rightH, animate);
     }
 
     // Animation
@@ -459,22 +477,31 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (!this._overlay || !this._positioned) return;
         if (this._isAnimating || this._isVisible) return;
 
-        debugLog("fadeIn start");
+        debugLog('fadeIn start');
         this._isAnimating = true;
-        this._overlay.remove_all_transitions?.();
+        this._overlay.remove_all_transitions();
         this._overlay.ease({
             opacity: 255,
             duration: FADE_TIME_MS,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
+            onStopped: finished => {
                 safe(() => {
-                    if (!this._overlay) return;
+                    if (!this._overlay || !this._isAnimating) return;
                     this._isAnimating = false;
+
+                    if (!finished) {
+                        this._overlay.opacity = INACTIVE_OPACITY;
+                        this._resetIdleTimer();
+                        debugLog('fadeIn interrupted');
+                        return;
+                    }
+
                     this._isVisible = true;
-                    this._initialTextUpdate();
+                    this._updateTexts();
                     this._showContainers();
-                    debugLog("fadeIn complete");
-                }, "fadeIn error");
+                    this._layoutContainers(false);
+                    debugLog('fadeIn complete');
+                }, 'fadeIn error');
             },
         });
     }
@@ -483,21 +510,21 @@ export default class AMOLEDOverlayExtension extends Extension {
     _hideOverlay() {
         if (!this._overlay) return;
         if (!this._isVisible && !this._isAnimating) return;
-        this._overlay.remove_all_transitions?.();
-        this._overlay.opacity = INACTIVE_OPACITY;
-        this._hideContainers();
         this._isVisible = false;
         this._isAnimating = false;
+        this._overlay.remove_all_transitions();
+        this._overlay.opacity = INACTIVE_OPACITY;
+        this._hideContainers();
     }
 
     _showContainers() {
-        if (this._container) this._container.show();
-        if (this._leftContainer) this._leftContainer.show();
+        this._container?.show();
+        this._leftContainer?.show();
     }
 
     _hideContainers() {
-        if (this._container) this._container.hide();
-        if (this._leftContainer) this._leftContainer.hide();
+        this._container?.hide();
+        this._leftContainer?.hide();
     }
 
     // Reposition overlay
@@ -509,15 +536,12 @@ export default class AMOLEDOverlayExtension extends Extension {
         const w = panel.width;
         const h = panel.height;
 
-        if (w === 0 || h === 0) {
+        if (w === 0 || h === 0)
             return false;
-        }
 
         this._overlay.set_position(x, y);
         this._overlay.set_size(w, h);
-        this._positionContainer(this._container, RIGHT_RATIO);
-        this._positionContainer(this._leftContainer, LEFT_RATIO);
-        this._avoidOverlap();
+        this._layoutContainers(false);
         this._positioned = true;
         debugLog(`reposition overlay ${w}x${h} at ${x},${y}`);
         return true;
