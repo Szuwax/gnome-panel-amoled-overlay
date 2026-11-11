@@ -9,7 +9,8 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 // Settings
 const INACTIVITY_MS    = 2000; // Delay with no mouse movement before overlay appears(ms)
 const FADE_TIME_MS     = 1000; // Duration of fade-in animation(ms)
-const INIT_DELAY_S     = 12;   //Initial delay before positioning overlay(sec)
+const FADE_OUT_MS      = 150;  // Duration of fade-out animation(ms)
+const INIT_DELAY_S     = 12;   // Initial delay before positioning overlay(sec)
 const INACTIVE_OPACITY = 0;    // Fully transparent overlay opacity
 const INIT_RETRIES     = 3;    // Retry count for repositioning overlay
 const OVERLAY_COLOR    = '#000000'; // Overlay background color (pure black for AMOLED)
@@ -22,13 +23,21 @@ const B_JITTERX   = 180;  // Max horizontal offset for jump effect(px)
 const MIN_GAP     = 12;   // Min space kept between left and right container(px)
 
 // Text spacing
-const DATE_MARGIN = 6;    // Space between clock and date(px)
-const USER_MARGIN = 6;    // Space between battery and username(px)
+const DATE_MARGIN = 12;    // Space between clock and date(px)
+const INFO_MARGIN = 12;    // Space between battery and the LEFT_INFO label(px)
 
 const SHOW_CLOCK    = true;
 const SHOW_DATE     = true;
-const SHOW_BATTERY  = true; // Battery info with charging status
-const SHOW_USERNAME = true;
+const SHOW_BATTERY  = 'auto'; // Battery info with charging status: true | false | 'auto' (only when unplugged)
+
+// Second label next to the battery:
+//  'user'      - username
+//  'time'      - battery time remaining (to empty, or to full while charging)
+//  'workspace' - active workspace number / workspace count
+//  'none'      - nothing
+const LEFT_INFO = 'none';
+
+const LOW_BATTERY_PERCENT = 15; // At or below this the battery label gets the low-battery style
 
 const REQUIRE_BUILTIN_ONLY = true;
 
@@ -37,11 +46,12 @@ const DEBUG = false;
 // Duration of the smooth position-change animation for the containers
 const POSITION_EASE_MS = 400;
 
-// Style classes (stylesheet.css)
+// Style classes (see stylesheet.css)
 const CLASS_CLOCK   = 'amoled-overlay-clock';
 const CLASS_DATE    = 'amoled-overlay-date';
 const CLASS_BATTERY = 'amoled-overlay-battery';
-const CLASS_USER    = 'amoled-overlay-user';
+const CLASS_BATTERY_LOW = 'amoled-overlay-battery-low';
+const CLASS_INFO    = 'amoled-overlay-info';
 
 
 function debugLog(msg) {
@@ -68,7 +78,7 @@ export default class AMOLEDOverlayExtension extends Extension {
 
         this._leftContainer = null;
         this._batteryLabel = null;
-        this._userLabel = null;
+        this._infoLabel = null;
 
         this._upClient = null;
         this._batteryDevice = null;
@@ -196,22 +206,24 @@ export default class AMOLEDOverlayExtension extends Extension {
             this._overlay.add_child(this._container);
         }
 
-        // Left container - battery/username
-        if (SHOW_BATTERY || SHOW_USERNAME) {
+        // Left container - battery/info
+        const showInfo = ['user', 'time', 'workspace'].includes(LEFT_INFO);
+        if (SHOW_BATTERY || showInfo) {
             this._leftContainer = new St.BoxLayout({ visible: false });
 
             if (SHOW_BATTERY) {
                 this._batteryLabel = this._makeLabel('', CLASS_BATTERY);
                 this._leftContainer.add_child(this._batteryLabel);
-                this._initBattery();
             }
 
-            if (SHOW_USERNAME) {
-                this._userLabel = this._makeLabel(GLib.get_user_name(), CLASS_USER);
-                if (SHOW_BATTERY)
-                    this._userLabel.set_style(`margin-left: ${USER_MARGIN}px;`);
-                this._leftContainer.add_child(this._userLabel);
+            if (showInfo) {
+                this._infoLabel = this._makeLabel('', CLASS_INFO);
+                this._leftContainer.add_child(this._infoLabel);
             }
+
+            if (SHOW_BATTERY || LEFT_INFO === 'time')
+                this._initBattery();
+            this._updateBatteryVisibility();
 
             this._overlay.add_child(this._leftContainer);
         }
@@ -262,7 +274,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         this._date = null;
         this._leftContainer = null;
         this._batteryLabel = null;
-        this._userLabel = null;
+        this._infoLabel = null;
 
         this._isVisible = false;
         this._isAnimating = false;
@@ -297,12 +309,36 @@ export default class AMOLEDOverlayExtension extends Extension {
                     () => this._updateBatteryLabel(), 'battery update error');
                 this._safeConnect(this._batteryDevice, 'notify::state',
                     () => this._updateBatteryLabel(), 'battery state update error');
+                if (LEFT_INFO === 'time') {
+                    this._safeConnect(this._batteryDevice, 'notify::time-to-empty',
+                        () => this._updateInfoLabel(), 'battery time update error');
+                    this._safeConnect(this._batteryDevice, 'notify::time-to-full',
+                        () => this._updateInfoLabel(), 'battery time update error');
+                }
                 this._updateBatteryLabel();
+            }
+            if (SHOW_BATTERY === 'auto') {
+                this._safeConnect(this._upClient, 'notify::on-battery',
+                    () => this._updateBatteryVisibility(), 'on-battery update error');
             }
         }, 'battery init error');
 
         if (!this._batteryDevice && this._batteryLabel)
             this._batteryLabel.text = '??%';
+    }
+
+    // Show/hide the battery part (SHOW_BATTERY = 'auto': visible only when unplugged)
+    _updateBatteryVisibility() {
+        const hidden = SHOW_BATTERY === 'auto' && !this._upClient?.on_battery;
+        if (this._batteryLabel)
+            this._batteryLabel.visible = !hidden;
+        if (this._infoLabel) {
+            if (LEFT_INFO === 'time')
+                this._infoLabel.visible = !hidden;
+            this._infoLabel.set_style(this._batteryLabel && !hidden
+                ? `margin-left: ${INFO_MARGIN}px;` : null);
+        }
+        this._layoutContainers(this._isVisible);
     }
 
     // Battery label update
@@ -311,14 +347,52 @@ export default class AMOLEDOverlayExtension extends Extension {
             const percent = Math.round(this._batteryDevice.percentage);
             const charging = this._batteryDevice.state === UPowerGlib.DeviceState.CHARGING;
             this._batteryLabel.text = `${charging ? 'C' : ''}${percent}%`;
+            if (!charging && percent <= LOW_BATTERY_PERCENT)
+                this._batteryLabel.add_style_class_name(CLASS_BATTERY_LOW);
+            else
+                this._batteryLabel.remove_style_class_name(CLASS_BATTERY_LOW);
             debugLog(`battery ${this._batteryLabel.text}`);
         }
+        if (LEFT_INFO === 'time')
+            this._updateInfoLabel();
+    }
+
+    // Info label update (LEFT_INFO)
+    _updateInfoLabel() {
+        if (!this._infoLabel) return;
+        let text = '';
+        if (LEFT_INFO === 'user') {
+            text = GLib.get_user_name();
+        } else if (LEFT_INFO === 'time' && this._batteryDevice) {
+            const charging = this._batteryDevice.state === UPowerGlib.DeviceState.CHARGING;
+            const seconds = charging
+                ? this._batteryDevice.time_to_full
+                : this._batteryDevice.time_to_empty;
+            if (seconds > 0) {
+                const minutes = Math.round(seconds / 60);
+                text = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
+            }
+        } else if (LEFT_INFO === 'workspace') {
+            const manager = global.workspace_manager;
+            text = `${manager.get_active_workspace_index() + 1}/${manager.get_n_workspaces()}`;
+        }
+        this._infoLabel.text = text;
     }
 
     // Signals
     _connectSignals() {
         this._safeConnect(global.stage, 'notify::allocation', () => this._repositionOverlay(), 'stage allocation');
         this._safeConnect(Main.layoutManager, 'monitors-changed', () => this._repositionOverlay(), 'monitors changed');
+        if (LEFT_INFO === 'workspace') {
+            this._safeConnect(global.workspace_manager, 'active-workspace-changed',
+                () => this._updateInfoLabel(), 'workspace changed');
+            this._safeConnect(global.workspace_manager, 'notify::n-workspaces',
+                () => this._updateInfoLabel(), 'workspace count changed');
+        }
+        this._safeConnect(Main.overview, 'showing', () => {
+            this._hideOverlay();
+            this._resetIdleTimer();
+        }, 'overview showing');
         const onPanelEnter = () => {
             this._hideOverlay();
             this._resetIdleTimer();
@@ -362,9 +436,9 @@ export default class AMOLEDOverlayExtension extends Extension {
         }
     }
 
-    // True while the pointer is on the panel or one of its menus is open
+    // True while the overview is open, a panel menu is open or the pointer is on the panel
     _panelInUse() {
-        if (Main.panel.menuManager?.activeMenu)
+        if (Main.overview.visible || Main.panel.menuManager?.activeMenu)
             return true;
         if (!this._overlay) return false;
         const [px, py] = global.get_pointer();
@@ -413,6 +487,7 @@ export default class AMOLEDOverlayExtension extends Extension {
         if (this._date && this._dateFormatter)
             this._date.text = this._dateFormatter.format(now);
         this._updateBatteryLabel();
+        this._updateInfoLabel();
     }
 
     // Minute tick: update time and jump to a new position
@@ -506,15 +581,23 @@ export default class AMOLEDOverlayExtension extends Extension {
         });
     }
 
-    // Hide overlay instantly
+    // Hide overlay with a short fade-out
     _hideOverlay() {
         if (!this._overlay) return;
         if (!this._isVisible && !this._isAnimating) return;
         this._isVisible = false;
         this._isAnimating = false;
-        this._overlay.remove_all_transitions();
-        this._overlay.opacity = INACTIVE_OPACITY;
         this._hideContainers();
+        this._overlay.remove_all_transitions();
+        this._overlay.ease({
+            opacity: INACTIVE_OPACITY,
+            duration: FADE_OUT_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onStopped: () => {
+                if (this._overlay && !this._isAnimating && !this._isVisible)
+                    this._overlay.opacity = INACTIVE_OPACITY;
+            },
+        });
     }
 
     _showContainers() {
