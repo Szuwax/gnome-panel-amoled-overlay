@@ -1,25 +1,25 @@
-.clock-label {
+.amoled-overlay-clock {
   font-family: "MatrixType Display", monospace;
   font-size: 18px;
   color: #335514;
   font-weight: normal;
 }
 
-.date-label {
+.amoled-overlay-date {
   font-family: "MatrixType Display", monospace;
   font-size: 12px;
   color: #335514;
   font-weight: normal;
 }
 
-.battery-label {
+.amoled-overlay-battery {
   font-family: "MatrixType Display", monospace;
   font-size: 18px;
   color: #335514;
   font-weight: normal;
 }
 
-.user-label {
+.amoled-overlay-user {
   font-family: "MatrixType Display", monospace;
   font-size: 12px;
   color: #335514;
