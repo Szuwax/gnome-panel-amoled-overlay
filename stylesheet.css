@@ -19,9 +19,14 @@
   font-weight: normal;
 }
 
-.amoled-overlay-user {
+/* LEFT_INFO label (username / time remaining / workspace) */
+.amoled-overlay-info {
   font-family: "MatrixType Display", monospace;
   font-size: 12px;
   color: #335514;
   font-weight: normal;
+}
+
+.amoled-overlay-battery-low {
+  color: #6b1f14;
 }
